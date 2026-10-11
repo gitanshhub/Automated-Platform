@@ -36,16 +36,22 @@ public class WorkflowController {
     @PostMapping("/connection")
     public NodeConnection createConnection(
             @RequestParam Long sourceNodeId,
-            @RequestParam Long targetNodeId)
+            @RequestParam Long targetNodeId,
+            @RequestParam(required = false) String branch)
     {
 
-        return workflowService.createNodeConnection(sourceNodeId, targetNodeId);
+        return workflowService.createNodeConnection(sourceNodeId, targetNodeId, branch);
     }
 
     @PostMapping("/workflow/{workflowId}/execution")
     public Execution createExecution(@PathVariable long workflowId){
 
         return workflowService.createExecution(workflowId);
+    }
+
+    @GetMapping("/execution/{executionId}")
+    public Execution getExecution(@PathVariable Long executionId) {
+        return workflowService.getExecution(executionId);
     }
 
 

@@ -25,4 +25,6 @@ public class NodeConnection {
     @ManyToOne
     @JoinColumn(name = "target_node_id", nullable = false)
     private Node targetNode;
+
+    private String branch;
 }

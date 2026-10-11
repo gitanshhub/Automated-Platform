@@ -1,7 +1,7 @@
 package com.project.Automated_Platform.entity;
 
 public enum ExecutionStatus {
-    QUEUE,
+    QUEUED,
     RUNNING,
     SUCCESS,
     FAILED
