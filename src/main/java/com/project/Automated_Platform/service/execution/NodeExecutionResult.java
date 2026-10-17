@@ -17,10 +17,6 @@ public class NodeExecutionResult {
 
     private String branch;
 
-//    public NodeExecutionResult(String output, int attempts, String branch) {
-//        this.output = output;
-//        this.attempts = attempts;
-//        this.branch = branch;
-//    }
+
 
 }

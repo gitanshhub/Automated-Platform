@@ -6,5 +6,6 @@ public enum NodeType {
     HTTP_REQUEST,
     DELAY,
     IF,
-    TRANSFORM
+    TRANSFORM,
+    MERGE
 }

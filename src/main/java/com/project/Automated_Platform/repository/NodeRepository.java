@@ -6,4 +6,6 @@ import org.springframework.stereotype.Repository;
 
 @Repository
 public interface NodeRepository extends JpaRepository<Node, Long> {
+
+    long countByWorkflowId(Long workflowId);
 }

@@ -31,4 +31,9 @@ public class Execution {
     @Column(columnDefinition = "TEXT")
     private String result;
 
+    @Column(name = "worker_id")
+    private String workerId;
+
+    @Column(name="lease_expires_at")
+    private LocalDateTime leaseExpiresAt;
 }

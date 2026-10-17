@@ -1,5 +1,6 @@
 package com.project.Automated_Platform.service;
 
+import com.project.Automated_Platform.config.WorkflowLimitsProperties;
 import com.project.Automated_Platform.entity.*;
 import com.project.Automated_Platform.repository.ExecutionRepository;
 import com.project.Automated_Platform.repository.NodeConnectionRepository;
@@ -8,6 +9,7 @@ import com.project.Automated_Platform.repository.WorkflowRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDateTime;
@@ -29,19 +31,32 @@ public class WorkflowService {
     private ExecutionRepository executionRepository;
 
     @Autowired
-    private ExecutionEngine executionEngine;
+    private ExecutionQueue executionQueue;
 
     @Autowired
-    private ExecutionQueue executionQueue;
+    private final WorkflowLimitsProperties limits;
+
+    public WorkflowService(WorkflowLimitsProperties limits) {
+        this.limits = limits;
+    }
 
     public Workflow createWorkflow(Workflow workflow) {
         return workflowRepository.save(workflow);
 
     }
 
+    @Transactional
     public Node createNode(long workflowId, Node node) {
-        Workflow workflow = workflowRepository.findById(workflowId)
+        Workflow workflow = workflowRepository.findByIdForUpdate(workflowId)
                 .orElseThrow(() -> new RuntimeException("workflow not found"));
+
+        long nodeCount = nodeRepository.countByWorkflowId(workflowId);
+
+        if(nodeCount >= limits.maxNodes()){
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "Workflow cannot contains more than"+ limits.maxNodes() +" nodes");
+        }
 
         node.setWorkflow(workflow);
 
@@ -65,6 +80,23 @@ public class WorkflowService {
         {
             throw new RuntimeException("Nodes must belong to same workflow");
         }
+
+        long connectionCount = nodeConnectionRepository.countBySourceNodeWorkflowId(sourceNode.getWorkflow().getId());
+        if(connectionCount >= limits.maxConnections()) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "workflow cannot contains more than " + limits.maxConnections() + " connections"
+            );
+        }
+
+        long outgoingCount = nodeConnectionRepository.countBySourceNodeId(sourceNodeId);
+        if(outgoingCount >= limits.maxOutgoingConnectionsPerNode()) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "node cannot contains more than " + limits.maxOutgoingConnectionsPerNode() + " outgoing connections"
+            );
+        }
+
 
         if(nodeConnectionRepository.existsBySourceNodeIdAndTargetNodeId(sourceNodeId, targetNodeId)) {
             throw new RuntimeException("Connection already exists");
@@ -114,7 +146,6 @@ public class WorkflowService {
                 .orElseThrow(() -> new RuntimeException("Execution not found"));
     }
 
-
     private boolean createCycle(Long sourceNodeId, Long targetNodeId) {
         Set<Long> visited = new HashSet<>();
         Queue<Long> queue = new LinkedList<>();
@@ -141,8 +172,5 @@ public class WorkflowService {
 
         return false;
     }
-
-
-
 
 }
