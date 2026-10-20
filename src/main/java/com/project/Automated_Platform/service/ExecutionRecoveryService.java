@@ -40,7 +40,8 @@ public class ExecutionRecoveryService {
                     ExecutionStatus.RUNNING,
                     ExecutionStatus.FAILED,
                     now,
-                    "worker lease expired"
+                    "worker lease expired",
+                    execution.getWorkerId()
             );
 
             if(recovered == 1) {

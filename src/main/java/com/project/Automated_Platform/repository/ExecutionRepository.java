@@ -107,7 +107,8 @@ public interface ExecutionRepository extends JpaRepository<Execution, Long> {
             @Param("running") ExecutionStatus running,
             @Param("failed") ExecutionStatus failed,
             @Param("now")LocalDateTime now,
-            @Param("reason") String reason
+            @Param("reason") String reason,
+            @Param("workerId") String workerId
             );
 
 
