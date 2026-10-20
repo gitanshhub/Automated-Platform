@@ -36,4 +36,10 @@ public class Execution {
 
     @Column(name="lease_expires_at")
     private LocalDateTime leaseExpiresAt;
+
+    @Column(name = "trigger_type", nullable = false)
+    private String triggerType;
+
+    @Column(name = "trigger_data", columnDefinition = "TEXT")
+    private String triggerData;
 }

@@ -11,6 +11,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 
 import java.time.LocalDateTime;
 import java.util.*;
@@ -19,11 +21,12 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 @Service
 public class ExecutionEngine {
-    @Autowired
-    private WorkflowRepository workflowRepository;
 
     @Autowired
     private NodeExecutor nodeExecutor;
+
+    @Autowired
+    private ObjectMapper objectMapper;
 
     @Autowired
     private NodeRepository nodeRepository;
@@ -42,7 +45,7 @@ public class ExecutionEngine {
     private NodeExecutionRepository nodeExecutionRepository;
 
 
-    private static final int MAX_RETRIES = 3;
+    private static final int MAX_RETRIES = 4;
 
     public void execute(long executionId, String workerId, AtomicBoolean leaseValid) {
 
@@ -66,25 +69,40 @@ public class ExecutionEngine {
                 .flatMap(node -> nodeConnectionRepository.findBySourceNodeId(node.getId()).stream())
                 .toList();
 
-        for(NodeConnection connection : workflowConnections) {
+        for (NodeConnection connection : workflowConnections) {
             connectionStatus.put(
                     connection.getId(),
                     ConnectionExecutionStatus.PENDING
             );
         }
 
+        String triggerType = execution.getTriggerType(),
+                requiredNodeType;
+
+        if ("MANUAL".equals(triggerType)) {
+            requiredNodeType = "MANUAL_TRIGGER";
+        } else if ("WEBHOOK".equals(triggerType)) {
+            requiredNodeType = "WEBHOOK";
+        } else requiredNodeType = null;
+
+
         Node startNode = null;
 
-        for (Node node : workflowNodes) {
-            List<NodeConnection> inComingConnections = nodeConnectionRepository.findByTargetNodeId(node.getId());
-            System.out.println(inComingConnections);
+        if (requiredNodeType != null) {
 
+            for (Node node : workflowNodes) {
+                if (!requiredNodeType.equals(String.valueOf(node.getType()))) {
+                    continue;
+                }
+                List<NodeConnection> inComingConnections = nodeConnectionRepository.findByTargetNodeId(node.getId());
+                System.out.println(inComingConnections);
 
-            if (inComingConnections.isEmpty()) {
-                startNode = node;
-                break;
+                if (inComingConnections.isEmpty()) {
+                    startNode = node;
+                    break;
+                }
+
             }
-
         }
 
         if (startNode == null) {
@@ -98,7 +116,7 @@ public class ExecutionEngine {
                     LocalDateTime.now()
             );
 
-            if(completed == 0) {
+            if (completed == 0) {
                 System.out.println("Could not finalize execution "
                         + executionId
                         + ": worker ownership was lost"
@@ -118,9 +136,37 @@ public class ExecutionEngine {
         String finalResult = "";
 
         try {
+            Map<String, Object> triggerInput = new LinkedHashMap<>();
+            if ("WEBHOOK".equals(triggerType)) {
+
+                Map<String, Object> payload = new LinkedHashMap<>();
+
+                if (execution.getTriggerData() != null && !execution.getTriggerData().isBlank()) {
+                    try {
+                        JsonNode payloadNode = objectMapper.readTree(execution.getTriggerData());
+
+                        Object payloadObj = objectMapper.convertValue(payloadNode, Object.class);
+
+                        if (!(payloadObj instanceof Map<?, ?> payloadMap)) {
+                            throw new IllegalArgumentException("Webhook payload must be a json object");
+                        }
+
+                        payloadMap.forEach((key, value) ->
+                                payload.put(String.valueOf(key), value));
+
+                    } catch (Exception e) {
+                        throw new RuntimeException("Failed to read execution trigger data", e);
+                    }
+                }
+                triggerInput.put("payload", payload);
+            }
+
+            context.setNodeInput(startNode.getId(), triggerInput);
+
+
             while (!queue.isEmpty()) {
 
-                if(!leaseValid.get()) {
+                if (!leaseValid.get()) {
                     throw new ExecutionLeaseLostExecption("Execution lease lost; stopping further node scheduling.");
                 }
 
@@ -129,7 +175,7 @@ public class ExecutionEngine {
 
                 while (!queue.isEmpty()) {
 
-                    if(!leaseValid.get()) {
+                    if (!leaseValid.get()) {
                         throw new ExecutionLeaseLostExecption("Execution lease lost; stopping further node scheduling.");
                     }
 
@@ -156,18 +202,12 @@ public class ExecutionEngine {
 
                         NodeExecutionResult executionResult = future.get();
 
-                        if(!leaseValid.get()) {
-                            for(Future<NodeExecutionResult> pendingFuture : futures) {
+                        if (!leaseValid.get()) {
+                            for (Future<NodeExecutionResult> pendingFuture : futures) {
                                 pendingFuture.cancel(true);
                             }
                             throw new ExecutionLeaseLostExecption("Execution lease lost while waiting for node: " + currNode.getName());
                         }
-
-                        context.putNodeOutput(
-                                currNode.getId(),
-                                "result",
-                                executionResult.getOutput()
-                        );
 
                         executeNodes.add(currNode.getName() + " -> " + executionResult.getOutput());
 
@@ -175,7 +215,7 @@ public class ExecutionEngine {
 
                         List<NodeConnection> connections = nodeConnectionRepository.findBySourceNodeId(currNode.getId());
                         for (NodeConnection connection : connections) {
-                            boolean selected  = executionResult.getBranch() == null
+                            boolean selected = executionResult.getBranch() == null
                                     || executionResult.getBranch().equals(connection.getBranch());
 
                             connectionStatus.put(
@@ -192,17 +232,16 @@ public class ExecutionEngine {
 
                         ExecutionLeaseLostExecption leaseLostExecption = null;
 
-                        if(e instanceof ExecutionException
-                                && e.getCause() instanceof ExecutionLeaseLostExecption)
-                        {
+                        if (e instanceof ExecutionException
+                                && e.getCause() instanceof ExecutionLeaseLostExecption) {
                             leaseLostExecption = (ExecutionLeaseLostExecption) e.getCause();
 
-                        } else if(e instanceof ExecutionLeaseLostExecption) {
+                        } else if (e instanceof ExecutionLeaseLostExecption) {
                             leaseLostExecption = (ExecutionLeaseLostExecption) e;
                         }
 
-                        if(leaseLostExecption != null) {
-                            for(Future<NodeExecutionResult> pendingFuture : futures) {
+                        if (leaseLostExecption != null) {
+                            for (Future<NodeExecutionResult> pendingFuture : futures) {
                                 pendingFuture.cancel(true);
                             }
                             throw leaseLostExecption;
@@ -216,7 +255,7 @@ public class ExecutionEngine {
                 finalResult = String.join("\n ", executeNodes);
             }
 
-        } catch(ExecutionLeaseLostExecption e) {
+        } catch (ExecutionLeaseLostExecption e) {
 
             log.warn("Execution {} stopped because its worker lease was lost", executionId);
             return;
@@ -224,7 +263,7 @@ public class ExecutionEngine {
         } catch (Exception e) {
             finalStatus = ExecutionStatus.FAILED;
 
-           finalResult =  String.join("\n ", executeNodes) + "\nERROR: " + e.getMessage();
+            finalResult = String.join("\n ", executeNodes) + "\nERROR: " + e.getMessage();
         }
 
         int completed = executionRepository.completeExecution(
@@ -237,7 +276,7 @@ public class ExecutionEngine {
                 LocalDateTime.now()
         );
 
-        if(completed == 0) {
+        if (completed == 0) {
             System.out.println("Could not finalize execution "
                     + executionId
                     + ": worker ownership was lost"
@@ -247,8 +286,8 @@ public class ExecutionEngine {
     }
 
     private NodeExecutionResult executeNode(Node node, Execution execution, NodeExecutionContext context, AtomicBoolean leaseValid, String workerId) {
-        if(!leaseValid.get()) {
-            throw new ExecutionLeaseLostExecption("Execution lease lost; refusing to retry node: "+ node.getName());
+        if (!leaseValid.get()) {
+            throw new ExecutionLeaseLostExecption("Execution lease lost; refusing to retry node: " + node.getName());
         }
 
         LocalDateTime startedAt = LocalDateTime.now();
@@ -261,7 +300,7 @@ public class ExecutionEngine {
                 LocalDateTime.now()
         );
 
-        if(createdNodeExecution == null) {
+        if (createdNodeExecution == null) {
             throw new ExecutionLeaseLostExecption(
                     "worker no longer owns execution " + execution.getId()
             );
@@ -271,11 +310,10 @@ public class ExecutionEngine {
                 .orElseThrow(() -> new IllegalStateException("Created node execution was not found: " + createdNodeExecution));
 
 
-
         try {
             NodeExecutionResult executionResult = executeWithRetry(node, context, leaseValid);
 
-            if(!leaseValid.get()) {
+            if (!leaseValid.get()) {
                 throw new ExecutionLeaseLostExecption("Execution lease lost before saving node result: " + node.getName());
             }
 
@@ -292,7 +330,7 @@ public class ExecutionEngine {
 
             );
 
-            if(updated == 0) {
+            if (updated == 0) {
                 throw new ExecutionLeaseLostExecption("worker no longer owns execution; node result was not saved: " + node.getName());
             }
 
@@ -300,7 +338,7 @@ public class ExecutionEngine {
 
         } catch (Exception e) {
 
-            if(e instanceof ExecutionLeaseLostExecption) {
+            if (e instanceof ExecutionLeaseLostExecption) {
                 throw (ExecutionLeaseLostExecption) e;
             }
 
@@ -318,7 +356,7 @@ public class ExecutionEngine {
                     LocalDateTime.now()
 
             );
-            if(updated == 0) {
+            if (updated == 0) {
                 throw new ExecutionLeaseLostExecption("worker no longer owns execution; node failure was not saved: " + node.getName());
             }
 
@@ -327,12 +365,11 @@ public class ExecutionEngine {
     }
 
     private NodeExecutionResult executeWithRetry(Node node, NodeExecutionContext context, AtomicBoolean leaseValid) {
-        int attempt = 0;
 
-        while (attempt <= MAX_RETRIES) {
+        for (int attempt = 1; attempt <= MAX_RETRIES + 1; attempt++) {
 
-            if(!leaseValid.get()) {
-                throw new ExecutionLeaseLostExecption("Execution lease lost; refusing to retry node: "+ node.getName());
+            if (!leaseValid.get()) {
+                throw new ExecutionLeaseLostExecption("Execution lease lost; refusing to retry node: " + node.getName());
             }
 
             Future<NodeExecutionResult> future = executorService.submit(
@@ -340,100 +377,81 @@ public class ExecutionEngine {
             );
 
             try {
-
                 NodeExecutionResult result = future.get(5, TimeUnit.SECONDS);
 
-                result.setAttempts(attempt + 1);
+                if (!leaseValid.get()) {
+                    throw new ExecutionLeaseLostExecption("Execution lease lost after node execution: " + node.getName());
+                }
+                result.setAttempts(attempt);
 
                 return result;
 
             } catch (TimeoutException e) {
-
                 future.cancel(true);
 
-                attempt++;
-
-                System.out.println("Node failed: " + node.getName() + " | attempt: " + attempt);
+                if (!leaseValid.get()) {
+                    throw new ExecutionLeaseLostExecption("Execution lease lost during timeout: " + node.getName());
+                }
 
                 if (attempt > MAX_RETRIES) {
-                    throw new RuntimeException("Node execution timed out after retries");
+                    throw new RuntimeException("Node execution timed out after " + attempt + " attempts", e);
                 }
+
+                log.warn("Node {} timed out on attempt {}", node.getName(), attempt);
 
                 long delay = (long) Math.pow(2, attempt - 1) * 1000;
 
-                try {
-                    Thread.sleep(delay);
-
-                    if(!leaseValid.get()) {
-                        throw new ExecutionLeaseLostExecption("Execution lease lost; refusing to retry node: "+ node.getName());
-                    }
-                } catch (InterruptedException interruptedException) {
-
-                    Thread.currentThread().interrupt();
-
-                    if(!leaseValid.get()) {
-                        throw new ExecutionLeaseLostExecption("Execution lease lost; refusing to retry node: " + node.getName());
-                    }
-
-                    throw new RuntimeException("Retry interrupted", interruptedException);
-                }
-
-
-            } catch (Exception e) {
+            } catch (InterruptedException interruptedException) {
                 future.cancel(true);
+                Thread.currentThread().interrupt();
 
-                if(e instanceof ExecutionException
-                        && e.getCause() instanceof ExecutionLeaseLostExecption)
-                {
-                    throw (ExecutionLeaseLostExecption) e.getCause();
+                if (!leaseValid.get()) {
+                    throw new ExecutionLeaseLostExecption("Execution lease lost; refusing to retry node: " + node.getName());
                 }
 
-                if(e instanceof ExecutionLeaseLostExecption) {
-                    throw (ExecutionLeaseLostExecption) e;
+                throw new RuntimeException("Retry interrupted", interruptedException);
+
+            } catch (ExecutionException e) {
+                Throwable cause = e.getCause();
+
+                if (cause instanceof ExecutionLeaseLostExecption leaseLost) {
+                    throw leaseLost;
                 }
 
-                if(!leaseValid.get()) {
-                    throw new ExecutionLeaseLostExecption("Execution lease lost; refusing to retry node: "+ node.getName());
+                if (!leaseValid.get()) {
+                    throw new ExecutionLeaseLostExecption("Execution lease lost; refusing to retry node: " + node.getName());
                 }
-
-                if(e instanceof InterruptedException) {
-                    Thread.currentThread().interrupt();
-                    throw new RuntimeException("Node execution interrupted", e);
-                }
-
-                attempt++;
-
-                System.out.println("Node failed: " + node.getName() + " | attempt: " + attempt);
 
                 if (attempt > MAX_RETRIES) {
                     throw new RuntimeException(e);
                 }
+                log.warn("Node {} timed out on attempt {}", node.getName(), attempt);
 
-                long delay = (long) Math.pow(2, attempt - 1) * 1000;
+            } catch (ExecutionLeaseLostExecption e) {
+                future.cancel(true);
+                throw e;
+            }
 
-                try {
+            long delay = (long) Math.pow(2, attempt - 1) * 1000;
 
-                    Thread.sleep(delay);
+            try {
+                Thread.sleep(delay);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
 
-                } catch (InterruptedException interruptedException) {
-
-                    Thread.currentThread().interrupt();
-
-                    if(!leaseValid.get()) {
-                        throw new ExecutionLeaseLostExecption("Execution lease lost; refusing to retry node: " + node.getName());
-                    }
-
-                    throw new RuntimeException("Retry interrupted", interruptedException);
+                if (!leaseValid.get()) {
+                    throw new ExecutionLeaseLostExecption(
+                            "Execution lease lost during retry delay: " + node.getName()
+                    );
                 }
-
-                if(!leaseValid.get()) {
-                    throw new ExecutionLeaseLostExecption("Execution lease lost; refusing to retry node: " + node.getName());
-                }
-
+                throw new RuntimeException("Retry Interrupted", e);
+            }
+            if (!leaseValid.get()) {
+                throw new ExecutionLeaseLostExecption("Execution lease lost; refusing to retry node: " + node.getName());
             }
         }
 
-        throw new RuntimeException("unexpected retry state");
+        throw new IllegalArgumentException("unexpected retry state");
     }
 
     private void resolveTargetReadiness(
@@ -461,15 +479,13 @@ public class ExecutionEngine {
             boolean allResolved = incomingConnections.stream()
                     .allMatch(
                             connection -> {
-                                    ConnectionExecutionStatus status = connectionStatus.get(connection.getId());
+                                ConnectionExecutionStatus status = connectionStatus.get(connection.getId());
 
-                                    return status != null && status != ConnectionExecutionStatus.PENDING;
-
-
+                                return status != null && status != ConnectionExecutionStatus.PENDING;
                             }
                     );
 
-            if(!allResolved) {
+            if (!allResolved) {
                 continue;
             }
 
@@ -478,62 +494,70 @@ public class ExecutionEngine {
                             connectionStatus.get(connection.getId()) == ConnectionExecutionStatus.ACTIVE);
 
             if (hasActiveIncoming) {
-                if (currNode.getType() == NodeType.MERGE) {
-                    List<List<Map<String, Object>>> inputStreams = new ArrayList<>();
 
-                    for (NodeConnection connection : incomingConnections) {
-                        ConnectionExecutionStatus status = connectionStatus.get(connection.getId());
+                List<List<Map<String, Object>>> inputStreams = new ArrayList<>();
+                List<Map<String, Object>> inputs = new ArrayList<>();
 
-                        if (status == ConnectionExecutionStatus.ACTIVE) {
-                            Node sourceNode = connection.getSourceNode();
+                for (NodeConnection connection : incomingConnections) {
+                    ConnectionExecutionStatus status = connectionStatus.get(connection.getId());
 
-                            inputStreams.add(context.getNodeOutputItems(sourceNode.getId()));
+                    if (status != ConnectionExecutionStatus.ACTIVE) {
+                        inputStreams.add(new ArrayList<>());
+                        continue;
+                    }
 
-                        } else {
-                            inputStreams.add(new ArrayList<>());
+                    Node sourceNode = connection.getSourceNode();
+
+                    List<Map<String, Object>> sourceItems = context.getNodeOutputItems(sourceNode.getId());
+
+                    String branch = connection.getBranch();
+
+                    if ("true".equalsIgnoreCase(branch) || "false".equalsIgnoreCase(branch)) {
+                        Object branchOutput = context.getNodeOutput(sourceNode.getId(), branch.toLowerCase() + "Items");
+
+                        if (branchOutput instanceof List<?> items) {
+                            sourceItems = new ArrayList<>();
+
+                            for (Object item : items) {
+                                if (item instanceof Map<?, ?> map) {
+                                    Map<String, Object> typedItems = new LinkedHashMap<>();
+
+                                    map.forEach((key, value) -> typedItems.put(String.valueOf(key), value));
+
+                                    sourceItems.add(typedItems);
+                                }
+                            }
                         }
                     }
-                    context.setNodeInputStreams(currNode.getId(), inputStreams);
 
-                } else {
-                    Map<String, Object> inputs = new HashMap<>();
-
-                    for (NodeConnection connection : incomingConnections) {
-                        ConnectionExecutionStatus status = connectionStatus.get(connection.getId());
-
-                        if (status != ConnectionExecutionStatus.ACTIVE) {
-                            continue;
-                        }
-                        Node sourceNode = connection.getSourceNode();
-
-                        Map<String, Object> sourceOutput = context.getNodeOutputs(sourceNode.getId());
-
-                        inputs.putAll(sourceOutput);
-                    }
-                    context.setNodeInput(currNode.getId(), inputs);
+                    inputStreams.add(sourceItems);
+                    inputs.addAll(sourceItems);
                 }
+                context.setNodeInputStreams(currNode.getId(), inputStreams);
+
+                context.setNodeInput(
+                        currNode.getId(),
+                        !inputs.isEmpty() ? inputs.get(0) : new HashMap<>()
+                );
+
                 readyQueue.add(currNode);
                 continue;
             }
 
             List<NodeConnection> outgoingConnections = nodeConnectionRepository.findBySourceNodeId(currNode.getId());
 
-            for(NodeConnection connection : outgoingConnections) {
+            for (NodeConnection connection : outgoingConnections) {
                 ConnectionExecutionStatus status = connectionStatus.get(connection.getId());
 
-                if(status == ConnectionExecutionStatus.PENDING) {
+                if (status == ConnectionExecutionStatus.PENDING) {
                     connectionStatus.put(connection.getId(), ConnectionExecutionStatus.SKIPPED);
                 }
 
-                if(status != ConnectionExecutionStatus.ACTIVE) {
+                if (status != ConnectionExecutionStatus.ACTIVE) {
                     candidates.add(connection.getTargetNode());
                 }
             }
 
         }
-
     }
-
-
-
 }

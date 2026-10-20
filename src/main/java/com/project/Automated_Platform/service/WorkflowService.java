@@ -11,6 +11,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
+import tools.jackson.databind.ObjectMapper;
 
 import java.time.LocalDateTime;
 import java.util.*;
@@ -34,6 +35,11 @@ public class WorkflowService {
     private ExecutionQueue executionQueue;
 
     @Autowired
+    private ObjectMapper objectMapper;
+
+    @Autowired
+    private WorkflowValidation workflowValidation;
+    @Autowired
     private final WorkflowLimitsProperties limits;
 
     public WorkflowService(WorkflowLimitsProperties limits) {
@@ -42,7 +48,6 @@ public class WorkflowService {
 
     public Workflow createWorkflow(Workflow workflow) {
         return workflowRepository.save(workflow);
-
     }
 
     @Transactional
@@ -118,9 +123,15 @@ public class WorkflowService {
         Workflow workflow = workflowRepository.findById(workflowId)
                 .orElseThrow(() -> new RuntimeException("workflow not found"));
 
+        List<Node> nodes = nodeRepository.findByWorkflowId(workflowId);
+        List<NodeConnection> connections = nodeConnectionRepository.findBySourceNodeWorkflowId(workflowId);
+        workflowValidation.validate(workflow, connections, nodes);
+
+
         Execution execution = new Execution();
         execution.setWorkflow(workflow);
         execution.setStatus(ExecutionStatus.QUEUED);
+        execution.setTriggerType("MANUAL");
 
         Execution savedExecution = executionRepository.save(execution);
 
@@ -144,6 +155,39 @@ public class WorkflowService {
     public Execution getExecution(Long executionId) {
         return executionRepository.findById(executionId)
                 .orElseThrow(() -> new RuntimeException("Execution not found"));
+    }
+
+    public Execution createWebhookExecution(long workflowId, Map<String, Object> payload) {
+        Workflow workflow = workflowRepository.findById(workflowId)
+                .orElseThrow(() -> new RuntimeException("Workflow not found"));
+
+        List<Node> nodes = nodeRepository.findByWorkflowId(workflowId);
+        List<NodeConnection> connections = nodeConnectionRepository.findBySourceNodeWorkflowId(workflowId);
+        workflowValidation.validate(workflow, connections, nodes);
+
+        Execution execution = new Execution();
+        execution.setWorkflow(workflow);
+        execution.setStatus(ExecutionStatus.QUEUED);
+
+        String triggerData = objectMapper.writeValueAsString(
+                payload == null ? Map.of() : payload
+        );
+        execution.setTriggerType("WEBHOOK");
+        execution.setTriggerData(triggerData);
+
+        Execution savedExecution = executionRepository.save(execution);
+
+        try {
+            executionQueue.submit(savedExecution.getId());
+        } catch (IllegalStateException e) {
+            savedExecution.setStatus(ExecutionStatus.FAILED);
+            savedExecution.setFinishedAt(LocalDateTime.now());
+            savedExecution.setResult(e.getMessage());
+
+            return executionRepository.save(savedExecution);
+        }
+
+        return savedExecution;
     }
 
     private boolean createCycle(Long sourceNodeId, Long targetNodeId) {

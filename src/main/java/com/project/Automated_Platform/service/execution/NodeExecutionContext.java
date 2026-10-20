@@ -116,8 +116,6 @@ public class NodeExecutionContext {
         return Collections.unmodifiableList(copiedStreams);
     }
 
-
-
     private List<Map<String, Object>> copyItems(List<Map<String, Object>> items) {
         List<Map<String, Object>> copies = new ArrayList<>();
 

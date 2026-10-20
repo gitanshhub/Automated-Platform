@@ -10,13 +10,7 @@ import lombok.Setter;
 @Getter
 @Setter
 public class NodeExecutionResult {
-
     private String output;
-
     private int attempts;
-
     private String branch;
-
-
-
 }

@@ -11,6 +11,7 @@ import java.util.*;
 
 @Service
 public class WorkflowValidation {
+
     public void validate(Workflow workflow, List<NodeConnection> connections, List<Node> nodes) {
 
         if(workflow == null) {
@@ -63,21 +64,11 @@ public class WorkflowValidation {
             }
         }
 
-        Set<Long> nodeWithIncomingConnections = new HashSet<>();
-        for(NodeConnection connection : connections) {
-            nodeWithIncomingConnections.add(connection.getTargetNode().getId());
-        }
-
-        boolean hasStartNode = nodes.stream()
-                .anyMatch((node) -> !nodeWithIncomingConnections.contains(node.getId()));
-
-        if(!hasStartNode) {
-            throw new IllegalStateException("workflow must contains at least one start node");
-        }
-
         validateNoCycle(connections, nodes);
 
         validateIfBranch(connections, nodes);
+
+        triggerValidation(connections, nodes);
     }
 
     private void validateNoCycle( List<NodeConnection> connections, List<Node> nodes) {
@@ -128,8 +119,8 @@ public class WorkflowValidation {
                         state.put(neighborId, 1);
 
                         stack.push(Map.entry(
-                                startId,
-                                adjecencyList.get(startId).iterator()));
+                                neighborId,
+                                adjecencyList.get(neighborId).iterator()));
 
                     }
                 } else {
@@ -165,6 +156,46 @@ public class WorkflowValidation {
                 );
 
             }
+        }
+    }
+
+    private void triggerValidation(List<NodeConnection> connections, List<Node> nodes) {
+        Set<Long> nodeIdsWithIncomingConnections = new HashSet<>();
+
+        for(NodeConnection connection : connections) {
+            nodeIdsWithIncomingConnections.add(connection.getTargetNode().getId());
+        }
+
+        int webHookCnt = 0;
+        boolean hasTrigger = false;
+
+        for(Node node : nodes) {
+            NodeType type = node.getType();
+
+            boolean isTrigger = type == NodeType.MANUAL_TRIGGER || type == NodeType.WEBHOOK;
+
+            boolean hasIncomingConnection = nodeIdsWithIncomingConnections.contains(node.getId());
+
+            if(isTrigger) {
+                hasTrigger = true;
+
+                if (hasIncomingConnection) {
+                    throw new IllegalStateException("Trigger nodes cannot have incoming connections. Node ID: " + node.getId());
+                }
+            } else if(!hasIncomingConnection) {
+                throw new IllegalStateException("Only trigger nodes can be starting nodes Node ID: " + node.getId());
+            }
+
+            if(type == NodeType.WEBHOOK) {
+                webHookCnt++;
+
+                if(webHookCnt > 1) {
+                    throw new IllegalStateException("A workflow can have at most one WEBHOOK node.");
+                }
+            }
+        }
+        if(!hasTrigger) {
+            throw new IllegalStateException("A workflow must contain one WEBHOOK or MANUAL TRIGGER node.");
         }
     }
 }

@@ -9,6 +9,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.Map;
+
 @RestController
 @RequestMapping("/api")
 public class WorkflowController {
@@ -52,6 +54,13 @@ public class WorkflowController {
     @GetMapping("/execution/{executionId}")
     public Execution getExecution(@PathVariable Long executionId) {
         return workflowService.getExecution(executionId);
+    }
+
+    @PostMapping("/webhook/{workflowId}")
+    public Execution receiveWebHook(@PathVariable long workflowId,
+                                    @RequestBody(required = false) Map<String, Object> payload
+    ) {
+        return workflowService.createWebhookExecution(workflowId, payload);
     }
 
 

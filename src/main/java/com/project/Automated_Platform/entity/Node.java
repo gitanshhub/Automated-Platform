@@ -4,6 +4,9 @@ import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
+import tools.jackson.databind.JsonNode;
 
 @Data
 @Entity
@@ -27,6 +30,7 @@ public class Node {
         @JoinColumn(name = "workflow_id")
         private Workflow workflow;
 
-        @Column(columnDefinition = "TEXT")
-        private String configuration;
+        @JdbcTypeCode(SqlTypes.JSON)
+        @Column(columnDefinition = "jsonb")
+        private JsonNode configuration;
 }

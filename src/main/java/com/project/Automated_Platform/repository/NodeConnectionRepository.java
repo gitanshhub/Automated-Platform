@@ -1,5 +1,6 @@
 package com.project.Automated_Platform.repository;
 
+import com.project.Automated_Platform.entity.Node;
 import com.project.Automated_Platform.entity.NodeConnection;
 import com.project.Automated_Platform.entity.Workflow;
 import jakarta.persistence.LockModeType;
@@ -21,6 +22,7 @@ public interface NodeConnectionRepository extends JpaRepository<NodeConnection, 
 
     boolean existsBySourceNodeIdAndTargetNodeId(long sourceNodeId, long targetNodeId);
 
+    List<NodeConnection> findBySourceNodeWorkflowId(Long workflowId);
 
     long countBySourceNodeWorkflowId( Long workflowId);
 
