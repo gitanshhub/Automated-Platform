@@ -4,6 +4,10 @@ import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
+import tools.jackson.databind.JsonNode;
+
 import java.time.LocalDateTime;
 
 @Data
@@ -42,4 +46,8 @@ public class Execution {
 
     @Column(name = "trigger_data", columnDefinition = "TEXT")
     private String triggerData;
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "output_data", columnDefinition = "jsonb")
+    private JsonNode outputData;
 }

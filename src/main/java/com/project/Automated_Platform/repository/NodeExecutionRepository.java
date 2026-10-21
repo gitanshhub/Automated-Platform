@@ -9,6 +9,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
+import tools.jackson.databind.JsonNode;
 
 import java.time.LocalDateTime;
 import java.util.Optional;
@@ -23,7 +24,8 @@ public interface NodeExecutionRepository extends JpaRepository<NodeExecution, Lo
             SET ne.status = :status,
             ne.finishedAt = :finishedAt,
             ne.attempts = :attempts,
-            ne.output = :output
+            ne.output = :output,
+            ne.outputData = :outputData
             
             WHERE 
             ne.id = :nodeExecutionId 
@@ -39,7 +41,9 @@ public interface NodeExecutionRepository extends JpaRepository<NodeExecution, Lo
             @Param("finishedAt") LocalDateTime finishedAt,
             @Param("attempts") int attempts,
             @Param("output") String output,
-            @Param("now") LocalDateTime now);
+            @Param("now") LocalDateTime now,
+            @Param("outputData") JsonNode outputData
+    );
 
     Optional<NodeExecution> findFirstByExecutionIdAndNodeIdAndStartedAt(Long executionId, Long nodeId, LocalDateTime startedAt);
 }

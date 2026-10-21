@@ -22,7 +22,14 @@ public class TransformNodeExecutor {
     public NodeExecutionResult execute(Node node, NodeExecutionContext context) {
 
         JsonNode config = node.getConfiguration();
+
         JsonNode operations = config == null ? null : config.get("operations");
+
+
+        System.out.println("config : "+config + "/n is obj: "+ (config != null && config.isObject()));
+        System.out.println("type : "+ node.getType());
+        System.out.println("operations: " + operations);
+
 
         if(operations == null || !operations.isArray()) {
             throw new IllegalArgumentException("TRANSFORM node requires an operation array");

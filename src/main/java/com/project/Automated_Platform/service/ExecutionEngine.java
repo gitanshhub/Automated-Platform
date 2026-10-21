@@ -113,7 +113,8 @@ public class ExecutionEngine {
                     ExecutionStatus.FAILED,
                     LocalDateTime.now(),
                     "No starting node found",
-                    LocalDateTime.now()
+                    LocalDateTime.now(),
+                    null
             );
 
             if (completed == 0) {
@@ -131,6 +132,8 @@ public class ExecutionEngine {
 
         queue.add(startNode);
         List<String> executeNodes = new ArrayList<>();
+
+        Node lastNode = null;
 
         ExecutionStatus finalStatus = ExecutionStatus.SUCCESS;
         String finalResult = "";
@@ -181,11 +184,13 @@ public class ExecutionEngine {
 
                     Node currNode = queue.poll();
 
+
                     if (!Visited.add(currNode.getId())) {
                         continue;
                     }
 
                     currentNodes.add(currNode);
+
 
                     Future<NodeExecutionResult> future = executorService.submit(
                             () -> executeNode(currNode, execution, context, leaseValid, workerId)
@@ -201,6 +206,7 @@ public class ExecutionEngine {
                     try {
 
                         NodeExecutionResult executionResult = future.get();
+                        lastNode = currNode;
 
                         if (!leaseValid.get()) {
                             for (Future<NodeExecutionResult> pendingFuture : futures) {
@@ -251,7 +257,6 @@ public class ExecutionEngine {
                     }
                 }
 
-
                 finalResult = String.join("\n ", executeNodes);
             }
 
@@ -266,6 +271,19 @@ public class ExecutionEngine {
             finalResult = String.join("\n ", executeNodes) + "\nERROR: " + e.getMessage();
         }
 
+        List<Map<String, Object>> finalItems = List.of();
+
+        if(!executeNodes.isEmpty()) {
+            finalItems = context.getNodeOutputItems(
+                    lastNode != null ? lastNode.getId() : null
+            );
+        }
+
+        JsonNode finalOutput = objectMapper.valueToTree(Map.of(
+                "Items", finalItems,
+                "nodeCount", executeNodes.size()
+        ));
+
         int completed = executionRepository.completeExecution(
                 executionId,
                 ExecutionStatus.RUNNING,
@@ -273,7 +291,9 @@ public class ExecutionEngine {
                 finalStatus,
                 LocalDateTime.now(),
                 finalResult,
-                LocalDateTime.now()
+                LocalDateTime.now(),
+                finalOutput
+
         );
 
         if (completed == 0) {
@@ -317,6 +337,27 @@ public class ExecutionEngine {
                 throw new ExecutionLeaseLostExecption("Execution lease lost before saving node result: " + node.getName());
             }
 
+            List<Map<String, Object>> items = context.getNodeOutputItems(node.getId()),
+            inputItems = new ArrayList<>();
+
+            for(List<Map<String, Object>> stream : context.getNodeInputStream(node.getId())) {
+                inputItems.addAll(stream);
+            }
+
+            if(inputItems.isEmpty()) {
+                Map<String, Object> single = context.getNodeInputs(node.getId());
+                if(single != null && !single.isEmpty()) {
+                    inputItems.add(new LinkedHashMap<>(single));
+                }
+            }
+
+            Map<String, Object> payload = new LinkedHashMap<>();
+            payload.put("message", executionResult.getOutput());
+            payload.put("inputItems", inputItems);
+            payload.put("items", items);
+
+            JsonNode outputData = objectMapper.valueToTree(payload);
+
             int updated = nodeExecutionRepository.updateResultIfOwned(
                     nodeExecution.getId(),
                     execution.getId(),
@@ -326,8 +367,8 @@ public class ExecutionEngine {
                     LocalDateTime.now(),
                     executionResult.getAttempts(),
                     executionResult.getOutput(),
-                    LocalDateTime.now()
-
+                    LocalDateTime.now(),
+                    outputData
             );
 
             if (updated == 0) {
@@ -353,7 +394,8 @@ public class ExecutionEngine {
                     finishedAt,
                     nodeExecution.getAttempts(),
                     e.getMessage() != null ? e.getMessage() : "Node execution failed",
-                    LocalDateTime.now()
+                    LocalDateTime.now(),
+                    null
 
             );
             if (updated == 0) {
@@ -561,3 +603,4 @@ public class ExecutionEngine {
         }
     }
 }
+

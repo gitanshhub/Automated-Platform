@@ -8,6 +8,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
+import tools.jackson.databind.JsonNode;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -66,7 +67,8 @@ public interface ExecutionRepository extends JpaRepository<Execution, Long> {
                             e.status = :terminalStatus,
                             e.finishedAt = :finishedAt,
                             e.result = :result,
-                            e.workerId = null
+                            e.workerId = null,
+                            e.outputData = :outputData
                             WHERE 
                                         e.id = :executionId 
                                         AND e.workerId = :workerId
@@ -82,7 +84,8 @@ public interface ExecutionRepository extends JpaRepository<Execution, Long> {
             @Param("terminalStatus") ExecutionStatus terminalStatus,
             @Param("finishedAt") LocalDateTime finishedAt,
             @Param("result") String result,
-            @Param("now")LocalDateTime now
+            @Param("now")LocalDateTime now,
+            @Param("outputData")JsonNode outputData
             );
 
 
