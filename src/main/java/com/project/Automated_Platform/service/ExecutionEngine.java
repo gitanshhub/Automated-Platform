@@ -120,7 +120,7 @@ public class ExecutionEngine {
             if (completed == 0) {
                 System.out.println("Could not finalize execution "
                         + executionId
-                        + ": worker ownership was lost"
+                        + ": starting node not found"
                 );
             }
 

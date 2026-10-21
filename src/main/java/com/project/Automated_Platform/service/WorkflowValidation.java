@@ -19,7 +19,7 @@ public class WorkflowValidation {
         }
 
         if(nodes == null || nodes.isEmpty()) {
-            throw new IllegalStateException("workflow must contains at least on node");
+            throw new IllegalStateException("workflow must contains at least one node");
         }
 
         if(connections == null) {
@@ -49,7 +49,7 @@ public class WorkflowValidation {
 
         for(NodeConnection connection : connections) {
             if(connection == null) {
-                throw new IllegalStateException("workflow a contains null connection");
+                throw new IllegalStateException("workflow contains null connection");
             }
 
             Node source = connection.getSourceNode(),
@@ -73,16 +73,16 @@ public class WorkflowValidation {
 
     private void validateNoCycle( List<NodeConnection> connections, List<Node> nodes) {
 
-        Map<Long, List<Long>> adjecencyList = new HashMap<>();
+        Map<Long, List<Long>> adjacencyList = new HashMap<>();
 
         for(Node node : nodes) {
-            adjecencyList.put(node.getId(), new ArrayList<>());
+            adjacencyList.put(node.getId(), new ArrayList<>());
         }
         for(NodeConnection connection : connections) {
             Long sourceId = connection.getSourceNode().getId(),
             targetId = connection.getTargetNode().getId();
 
-            adjecencyList.get(sourceId).add(targetId);
+            adjacencyList.get(sourceId).add(targetId);
         }
 
         // 0 = unvisited, 1 = visiting, 2 = completed
@@ -100,7 +100,7 @@ public class WorkflowValidation {
 
             state.put(startId, 1);
 
-            stack.push(Map.entry(startId, adjecencyList.get(startId).iterator()));
+            stack.push(Map.entry(startId, adjacencyList.get(startId).iterator()));
 
             while(!stack.isEmpty()) {
                 var frame = stack.peek();
@@ -120,7 +120,7 @@ public class WorkflowValidation {
 
                         stack.push(Map.entry(
                                 neighborId,
-                                adjecencyList.get(neighborId).iterator()));
+                                adjacencyList.get(neighborId).iterator()));
 
                     }
                 } else {
