@@ -1,7 +1,9 @@
 package com.project.Automated_Platform.service;
 
 import com.project.Automated_Platform.entity.*;
-import com.project.Automated_Platform.exception.ExecutionLeaseLostExecption;
+import com.project.Automated_Platform.exception.ExecutionLeaseLostException;
+import com.project.Automated_Platform.exception.HttpStatusException;
+import com.project.Automated_Platform.exception.NodeExecutionOutcomeUnknownException;
 import com.project.Automated_Platform.repository.*;
 import com.project.Automated_Platform.service.execution.ConnectionExecutionStatus;
 import com.project.Automated_Platform.service.execution.NodeExecutionContext;
@@ -9,7 +11,6 @@ import com.project.Automated_Platform.service.execution.NodeExecutionResult;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
@@ -57,8 +58,6 @@ public class ExecutionEngine {
         Workflow workflow = execution.getWorkflow();
 
         Map<Long, ConnectionExecutionStatus> connectionStatus = new HashMap<>();
-
-
         List<Node> nodes = nodeRepository.findAll();
 
         List<Node> workflowNodes = nodes.stream()
@@ -166,11 +165,10 @@ public class ExecutionEngine {
 
             context.setNodeInput(startNode.getId(), triggerInput);
 
-
             while (!queue.isEmpty()) {
 
                 if (!leaseValid.get()) {
-                    throw new ExecutionLeaseLostExecption("Execution lease lost; stopping further node scheduling.");
+                    throw new ExecutionLeaseLostException("Execution lease lost; stopping further node scheduling.");
                 }
 
                 List<Future<NodeExecutionResult>> futures = new ArrayList<>();
@@ -179,18 +177,16 @@ public class ExecutionEngine {
                 while (!queue.isEmpty()) {
 
                     if (!leaseValid.get()) {
-                        throw new ExecutionLeaseLostExecption("Execution lease lost; stopping further node scheduling.");
+                        throw new ExecutionLeaseLostException("Execution lease lost; stopping further node scheduling.");
                     }
 
                     Node currNode = queue.poll();
-
 
                     if (!Visited.add(currNode.getId())) {
                         continue;
                     }
 
                     currentNodes.add(currNode);
-
 
                     Future<NodeExecutionResult> future = executorService.submit(
                             () -> executeNode(currNode, execution, context, leaseValid, workerId)
@@ -212,7 +208,7 @@ public class ExecutionEngine {
                             for (Future<NodeExecutionResult> pendingFuture : futures) {
                                 pendingFuture.cancel(true);
                             }
-                            throw new ExecutionLeaseLostExecption("Execution lease lost while waiting for node: " + currNode.getName());
+                            throw new ExecutionLeaseLostException("Execution lease lost while waiting for node: " + currNode.getName());
                         }
 
                         executeNodes.add(currNode.getName() + " -> " + executionResult.getOutput());
@@ -236,21 +232,42 @@ public class ExecutionEngine {
 
                     } catch (Exception e) {
 
-                        ExecutionLeaseLostExecption leaseLostExecption = null;
+                        ExecutionLeaseLostException leaseLostException = null;
 
                         if (e instanceof ExecutionException
-                                && e.getCause() instanceof ExecutionLeaseLostExecption) {
-                            leaseLostExecption = (ExecutionLeaseLostExecption) e.getCause();
+                                && e.getCause() instanceof ExecutionLeaseLostException) {
+                            leaseLostException = (ExecutionLeaseLostException) e.getCause();
 
-                        } else if (e instanceof ExecutionLeaseLostExecption) {
-                            leaseLostExecption = (ExecutionLeaseLostExecption) e;
+                        } else if (e instanceof ExecutionLeaseLostException) {
+                            leaseLostException = (ExecutionLeaseLostException) e;
                         }
 
-                        if (leaseLostExecption != null) {
+                        if (leaseLostException != null) {
                             for (Future<NodeExecutionResult> pendingFuture : futures) {
                                 pendingFuture.cancel(true);
                             }
-                            throw leaseLostExecption;
+                            throw leaseLostException;
+                        }
+
+                        if(e instanceof ExecutionException && e.getCause() instanceof NodeExecutionOutcomeUnknownException outcomeUnknownException
+
+                        ) {
+                            for (Future<NodeExecutionResult> pendingFuture : futures) {
+                                pendingFuture.cancel(true);
+                            }
+
+                            throw outcomeUnknownException;
+                        }
+
+                        if(e instanceof ExecutionException
+                                && e.getCause() instanceof RuntimeException runtimeException
+                                && runtimeException.getCause() instanceof NodeExecutionOutcomeUnknownException outcomeUnknownException
+                        ) {
+                            for (Future<NodeExecutionResult> pendingFuture : futures) {
+                                pendingFuture.cancel(true);
+                            }
+
+                            throw outcomeUnknownException;
                         }
 
                         throw new RuntimeException(e);
@@ -260,7 +277,7 @@ public class ExecutionEngine {
                 finalResult = String.join("\n ", executeNodes);
             }
 
-        } catch (ExecutionLeaseLostExecption e) {
+        } catch (ExecutionLeaseLostException e) {
 
             log.warn("Execution {} stopped because its worker lease was lost", executionId);
             return;
@@ -307,7 +324,7 @@ public class ExecutionEngine {
 
     private NodeExecutionResult executeNode(Node node, Execution execution, NodeExecutionContext context, AtomicBoolean leaseValid, String workerId) {
         if (!leaseValid.get()) {
-            throw new ExecutionLeaseLostExecption("Execution lease lost; refusing to retry node: " + node.getName());
+            throw new ExecutionLeaseLostException("Execution lease lost; refusing to retry node: " + node.getName());
         }
 
         LocalDateTime startedAt = LocalDateTime.now();
@@ -321,7 +338,7 @@ public class ExecutionEngine {
         );
 
         if (createdNodeExecution == null) {
-            throw new ExecutionLeaseLostExecption(
+            throw new ExecutionLeaseLostException(
                     "worker no longer owns execution " + execution.getId()
             );
         }
@@ -329,12 +346,11 @@ public class ExecutionEngine {
         NodeExecution nodeExecution = nodeExecutionRepository.findById(createdNodeExecution)
                 .orElseThrow(() -> new IllegalStateException("Created node execution was not found: " + createdNodeExecution));
 
-
         try {
-            NodeExecutionResult executionResult = executeWithRetry(node, context, leaseValid);
+            NodeExecutionResult executionResult = executeWithRetry(node, context, leaseValid, execution.getId());
 
             if (!leaseValid.get()) {
-                throw new ExecutionLeaseLostExecption("Execution lease lost before saving node result: " + node.getName());
+                throw new ExecutionLeaseLostException("Execution lease lost before saving node result: " + node.getName());
             }
 
             List<Map<String, Object>> items = context.getNodeOutputItems(node.getId()),
@@ -372,57 +388,78 @@ public class ExecutionEngine {
             );
 
             if (updated == 0) {
-                throw new ExecutionLeaseLostExecption("worker no longer owns execution; node result was not saved: " + node.getName());
+                throw new ExecutionLeaseLostException("worker no longer owns execution; node result was not saved: " + node.getName());
             }
 
             return executionResult;
 
         } catch (Exception e) {
 
-            if (e instanceof ExecutionLeaseLostExecption) {
-                throw (ExecutionLeaseLostExecption) e;
+            if (e instanceof ExecutionLeaseLostException leaseLostException) {
+                throw leaseLostException;
             }
 
             LocalDateTime finishedAt = LocalDateTime.now();
+
+            NodeExecutionStatus failureStatus = e instanceof NodeExecutionOutcomeUnknownException
+                    ? NodeExecutionStatus.OUTCOME_UNKNOWN : NodeExecutionStatus.FAILED;
+
+            Map<String, Object> errorDetails = new LinkedHashMap<>();
+            errorDetails.put("Status", "error");
+            errorDetails.put("message", e.getMessage() != null ? e.getMessage() : "Node execution failed");
+
+            if(e instanceof HttpStatusException httpStatusException) {
+                errorDetails.put("Status Code", httpStatusException.getStatusCode());
+            }
+
+            JsonNode errorOutput = objectMapper.valueToTree(errorDetails);
 
             int updated = nodeExecutionRepository.updateResultIfOwned(
                     nodeExecution.getId(),
                     execution.getId(),
                     workerId,
                     ExecutionStatus.RUNNING,
-                    NodeExecutionStatus.FAILED,
+                    failureStatus,
                     finishedAt,
                     nodeExecution.getAttempts(),
                     e.getMessage() != null ? e.getMessage() : "Node execution failed",
                     LocalDateTime.now(),
-                    null
+                    errorOutput
 
             );
             if (updated == 0) {
-                throw new ExecutionLeaseLostExecption("worker no longer owns execution; node failure was not saved: " + node.getName());
+                throw new ExecutionLeaseLostException("worker no longer owns execution; node failure was not saved: " + node.getName());
+            }
+
+            if(e instanceof NodeExecutionOutcomeUnknownException outcomeUnknownException) {
+                throw outcomeUnknownException;
+            }
+
+            if(e instanceof HttpStatusException httpStatusException) {
+                throw httpStatusException;
             }
 
             throw new RuntimeException(e);
         }
     }
 
-    private NodeExecutionResult executeWithRetry(Node node, NodeExecutionContext context, AtomicBoolean leaseValid) {
+    private NodeExecutionResult executeWithRetry(Node node, NodeExecutionContext context, AtomicBoolean leaseValid, Long executionId) {
 
         for (int attempt = 1; attempt <= MAX_RETRIES + 1; attempt++) {
 
             if (!leaseValid.get()) {
-                throw new ExecutionLeaseLostExecption("Execution lease lost; refusing to retry node: " + node.getName());
+                throw new ExecutionLeaseLostException("Execution lease lost; refusing to retry node: " + node.getName());
             }
 
             Future<NodeExecutionResult> future = executorService.submit(
-                    () -> nodeExecutor.execute(node, context)
+                    () -> nodeExecutor.execute(node, context, "execution-" + executionId + "-node-" + node.getId())
             );
 
             try {
-                NodeExecutionResult result = future.get(5, TimeUnit.SECONDS);
+                NodeExecutionResult result = future.get(60, TimeUnit.SECONDS);
 
                 if (!leaseValid.get()) {
-                    throw new ExecutionLeaseLostExecption("Execution lease lost after node execution: " + node.getName());
+                    throw new ExecutionLeaseLostException("Execution lease lost after node execution: " + node.getName());
                 }
                 result.setAttempts(attempt);
 
@@ -430,25 +467,25 @@ public class ExecutionEngine {
 
             } catch (TimeoutException e) {
                 future.cancel(true);
-
                 if (!leaseValid.get()) {
-                    throw new ExecutionLeaseLostExecption("Execution lease lost during timeout: " + node.getName());
+                    throw new ExecutionLeaseLostException("Execution lease lost during timeout: " + node.getName());
+                }
+
+                if("HTTP_REQUEST".equals(String.valueOf(node.getType()))) {
+                    throw new NodeExecutionOutcomeUnknownException("HTTP request timed out; the external outcome is unknown for node: " + node.getName(), e);
                 }
 
                 if (attempt > MAX_RETRIES) {
                     throw new RuntimeException("Node execution timed out after " + attempt + " attempts", e);
                 }
-
                 log.warn("Node {} timed out on attempt {}", node.getName(), attempt);
-
-                long delay = (long) Math.pow(2, attempt - 1) * 1000;
 
             } catch (InterruptedException interruptedException) {
                 future.cancel(true);
                 Thread.currentThread().interrupt();
 
                 if (!leaseValid.get()) {
-                    throw new ExecutionLeaseLostExecption("Execution lease lost; refusing to retry node: " + node.getName());
+                    throw new ExecutionLeaseLostException("Execution lease lost; refusing to retry node: " + node.getName());
                 }
 
                 throw new RuntimeException("Retry interrupted", interruptedException);
@@ -456,20 +493,30 @@ public class ExecutionEngine {
             } catch (ExecutionException e) {
                 Throwable cause = e.getCause();
 
-                if (cause instanceof ExecutionLeaseLostExecption leaseLost) {
+                if (cause instanceof ExecutionLeaseLostException leaseLost) {
                     throw leaseLost;
                 }
 
-                if (!leaseValid.get()) {
-                    throw new ExecutionLeaseLostExecption("Execution lease lost; refusing to retry node: " + node.getName());
+                if(cause instanceof NodeExecutionOutcomeUnknownException outcomeUnknown) {
+                    throw outcomeUnknown;
                 }
+
+                if(cause instanceof HttpStatusException httpStatusException) {
+                    throw httpStatusException;
+                }
+
+                if (!leaseValid.get()) {
+                    throw new ExecutionLeaseLostException("Execution lease lost; refusing to retry node: " + node.getName());
+                }
+
 
                 if (attempt > MAX_RETRIES) {
                     throw new RuntimeException(e);
                 }
-                log.warn("Node {} timed out on attempt {}", node.getName(), attempt);
 
-            } catch (ExecutionLeaseLostExecption e) {
+                log.warn("Problem in Node {} execution, attempt made: {}", node.getName(), attempt);
+
+            } catch (ExecutionLeaseLostException e) {
                 future.cancel(true);
                 throw e;
             }
@@ -482,18 +529,18 @@ public class ExecutionEngine {
                 Thread.currentThread().interrupt();
 
                 if (!leaseValid.get()) {
-                    throw new ExecutionLeaseLostExecption(
+                    throw new ExecutionLeaseLostException(
                             "Execution lease lost during retry delay: " + node.getName()
                     );
                 }
                 throw new RuntimeException("Retry Interrupted", e);
             }
             if (!leaseValid.get()) {
-                throw new ExecutionLeaseLostExecption("Execution lease lost; refusing to retry node: " + node.getName());
+                throw new ExecutionLeaseLostException("Execution lease lost; refusing to retry node: " + node.getName());
             }
         }
 
-        throw new IllegalArgumentException("unexpected retry state");
+        throw new IllegalArgumentException("Unexpected retry state");
     }
 
     private void resolveTargetReadiness(

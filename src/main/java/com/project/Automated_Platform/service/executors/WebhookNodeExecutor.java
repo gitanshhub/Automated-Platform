@@ -13,6 +13,7 @@ import java.util.Map;
 
 @Component
 public class WebhookNodeExecutor {
+
     public NodeExecutionResult execute(Node node, NodeExecutionContext context) {
         Object payload = context.getNodeInputValue(node.getId(), "payload");
 

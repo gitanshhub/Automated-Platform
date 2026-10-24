@@ -19,9 +19,12 @@ public class TransformNodeExecutor {
     @Autowired
     private ObjectMapper objectMapper;
 
+    @Autowired
+    private NodeConfigurationParser nodeConfigurationParser;
+
     public NodeExecutionResult execute(Node node, NodeExecutionContext context) {
 
-        JsonNode config = node.getConfiguration();
+        JsonNode config = nodeConfigurationParser.parse(node.getConfiguration(), node.getType().toString());
 
         JsonNode operations = config == null ? null : config.get("operations");
 
@@ -108,7 +111,7 @@ public class TransformNodeExecutor {
                 }
             }
 
-            case "SET_FILED" -> {
+            case "SET_FIELD" -> {
                 String field = requiredString(operation, "targetField");
                 JsonNode valueNode = operation.get("value");
 

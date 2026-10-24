@@ -3,15 +3,20 @@ package com.project.Automated_Platform.service.executors;
 import com.project.Automated_Platform.entity.Node;
 import com.project.Automated_Platform.service.execution.NodeExecutionContext;
 import com.project.Automated_Platform.service.execution.NodeExecutionResult;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import tools.jackson.databind.JsonNode;
 
 @Service
 public class DelayNodeExecutor {
 
+
+    @Autowired
+    private NodeConfigurationParser nodeConfigurationParser;
+
     public NodeExecutionResult execute(Node node, NodeExecutionContext context) {
 
-        JsonNode config = node.getConfiguration();
+        JsonNode config = nodeConfigurationParser.parse(node.getConfiguration(), node.getType().toString());
 
         if(config == null || config.get("durationMs") == null) {
             throw new IllegalArgumentException("DELAY requires durationMs configuration");

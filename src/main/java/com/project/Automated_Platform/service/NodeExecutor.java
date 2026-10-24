@@ -37,7 +37,7 @@ public class NodeExecutor {
     @Autowired
     private ManualTriggerNodeExecutor manualTriggerNodeExecutor;
 
-    public NodeExecutionResult execute(Node node, NodeExecutionContext context) {
+    public NodeExecutionResult execute(Node node, NodeExecutionContext context, String idempotencyKey ) {
         switch (node.getType()) {
             case MANUAL_TRIGGER:
                 return manualTriggerNodeExecutor.execute(node, context);
@@ -46,7 +46,7 @@ public class NodeExecutor {
                 return webhookNodeExecutor.execute(node, context);
 
             case HTTP_REQUEST:
-                return httpResponseNodeExecutor.execute(node, context);
+                return httpResponseNodeExecutor.execute(node, context, idempotencyKey);
 
             case DELAY:
                 return delayNodeExecutor.execute(node, context);

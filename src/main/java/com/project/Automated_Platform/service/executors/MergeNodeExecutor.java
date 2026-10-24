@@ -13,9 +13,12 @@ import java.util.*;
 @Service
 public class MergeNodeExecutor {
 
+    @Autowired
+    private NodeConfigurationParser nodeConfigurationParser;
+
     public NodeExecutionResult execute(Node node, NodeExecutionContext context) {
         try {
-            JsonNode config = node.getConfiguration();
+            JsonNode config = nodeConfigurationParser.parse(node.getConfiguration(), node.getType().toString());
 
             String mode = requiredConfig(config, "mode").toUpperCase();
 

@@ -46,7 +46,7 @@ public class ExecutionWorker {
 
         while (!Thread.currentThread().isInterrupted()) {
             try {
-                System.out.println("Current Thread: " + Thread.currentThread() + "\nActive Thread Count: " + Thread.activeCount());
+                System.out.println("Current Thread: " + Thread.currentThread() + "\n"+ "Active Thread Count: " + Thread.activeCount());
 
                 Long executionId = executionQueue.take();
 

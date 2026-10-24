@@ -9,9 +9,9 @@ import java.util.concurrent.TimeUnit;
 @Configuration
 @EnableScheduling
 public class SchedulingConfig {
-
-    @Scheduled(fixedDelay = 30, timeUnit = TimeUnit.SECONDS)
-    public void recoveryInterruptedExecution() {
-
-    }
+//
+//    @Scheduled(fixedDelay = 30, timeUnit = TimeUnit.SECONDS)
+//    public void recoveryInterruptedExecution() {
+//
+//    }
 }
