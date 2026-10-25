@@ -13,6 +13,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.UnaryOperator;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 @Service
 public class TransformNodeExecutor {
@@ -171,6 +173,13 @@ public class TransformNodeExecutor {
                 }
             }
 
+            case "MAP_FIELDS" -> {
+                Map<String, Object> mapped = mapField(item, operation.get("mappings"));
+
+                item.clear();
+                item.putAll(mapped);
+            }
+
             default -> throw new IllegalArgumentException("Unsupported TRANSFORM operation" + type);
         }
     }
@@ -198,6 +207,80 @@ public class TransformNodeExecutor {
                     transformation.apply(text));
         }
 
+    }
+
+    private Map<String, Object> mapField(Map<String, Object> item, JsonNode mappings) {
+        if(mappings == null || !mappings.isObject()) {
+            throw new IllegalArgumentException("MAP Field requires a mapping object");
+        }
+
+        JsonNode source = objectMapper.valueToTree(item);
+
+        Map<String, Object> output = new LinkedHashMap<>();
+
+        mappings.properties().forEach(entry -> {
+            String targetField = entry.getKey();
+            JsonNode pathNode = entry.getValue();
+
+            if(!pathNode.isString() || pathNode.asString().isBlank()) {
+                throw new IllegalArgumentException("mapping path must be a non-empty string: " + targetField);
+            }
+
+            String path = pathNode.asString();
+            JsonNode value = resolveJsonPath(source, path);
+
+            if(value == null || value.isMissingNode()) {
+                throw new IllegalArgumentException("JSON path '" + path + "' was not found for field '" + targetField + "'");
+            }
+
+            output.put(targetField, objectMapper.convertValue(value, Object.class));
+        });
+
+        return output;
+    }
+
+    private JsonNode resolveJsonPath(JsonNode source, String path) {
+        String normalization = path.trim();
+
+        if( normalization.startsWith("$")) {
+            normalization = normalization.substring(1);
+        }
+
+        if( normalization.startsWith(".")) {
+            normalization = normalization.substring(1);
+        }
+
+        if(normalization.isEmpty()) {
+            return source;
+        }
+
+        Matcher matcher = Pattern
+                .compile("([^\\.\\[\\]]+)|\\[(\\d+)]")
+                .matcher(normalization);
+
+        JsonNode current = source;
+
+        while(matcher.find()) {
+            if (current == null || current.isMissingNode() || current.isNull()) {
+                return null;
+            }
+
+            String field = matcher.group(1);
+            String index = matcher.group(2);
+
+            if (field != null) {
+                current = current.path(field);
+            } else {
+                int arrayIdx = Integer.parseInt(index);
+
+                if (!current.isArray() || arrayIdx >= current.size()) {
+                    return null;
+                }
+                current = current.get(arrayIdx);
+            }
+        }
+
+        return current;
     }
 
 

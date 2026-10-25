@@ -35,34 +35,22 @@ public class NodeExecutor {
     private WebhookNodeExecutor webhookNodeExecutor;
 
     @Autowired
+    private TelegramNodeExecutor telegramNodeExecutor;
+
+    @Autowired
     private ManualTriggerNodeExecutor manualTriggerNodeExecutor;
 
     public NodeExecutionResult execute(Node node, NodeExecutionContext context, String idempotencyKey ) {
-        switch (node.getType()) {
-            case MANUAL_TRIGGER:
-                return manualTriggerNodeExecutor.execute(node, context);
-
-            case WEBHOOK:
-                return webhookNodeExecutor.execute(node, context);
-
-            case HTTP_REQUEST:
-                return httpResponseNodeExecutor.execute(node, context, idempotencyKey);
-
-            case DELAY:
-                return delayNodeExecutor.execute(node, context);
-
-            case IF:
-                return ifNodeExecutor.execute(node, context);
-
-            case TRANSFORM:
-                return transformNodeExecutor.execute(node, context);
-
-            case MERGE:
-                return mergeNodeExecutor.execute(node, context);
-
-            default:
-                throw new RuntimeException("unsupported node type");
-        }
+        return switch (node.getType()) {
+            case MANUAL_TRIGGER -> manualTriggerNodeExecutor.execute(node, context);
+            case WEBHOOK -> webhookNodeExecutor.execute(node, context);
+            case HTTP_REQUEST -> httpResponseNodeExecutor.execute(node, context, idempotencyKey);
+            case DELAY -> delayNodeExecutor.execute(node, context);
+            case IF -> ifNodeExecutor.execute(node, context);
+            case TRANSFORM -> transformNodeExecutor.execute(node, context);
+            case MERGE -> mergeNodeExecutor.execute(node, context);
+            case TELEGRAM -> telegramNodeExecutor.execute(node, context);
+        };
 
     }
 }

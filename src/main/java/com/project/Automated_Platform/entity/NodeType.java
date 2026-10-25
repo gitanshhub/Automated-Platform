@@ -7,5 +7,6 @@ public enum NodeType {
     DELAY,
     IF,
     TRANSFORM,
-    MERGE
+    MERGE,
+    TELEGRAM
 }

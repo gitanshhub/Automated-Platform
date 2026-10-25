@@ -225,7 +225,7 @@ public class HttpResponseNodeExecutor {
             if(headerName.isBlank() || headerName.indexOf("\r") >= 0 || headerName.indexOf("\n") >= 0) {
                 throw new IllegalArgumentException("Invalid header name");
             }
-            String headerValue = entry.getKey();
+            String headerValue = value.asString();
 
             if(headerValue.indexOf("\r") >= 0 || headerValue.indexOf("\n") >= 0) {
                 throw new IllegalArgumentException("Invalid value for header: " + headerName);
