@@ -40,6 +40,9 @@ public class NodeExecutor {
     @Autowired
     private ManualTriggerNodeExecutor manualTriggerNodeExecutor;
 
+    @Autowired
+    private GmailNodeExecutor gmailNodeExecutor;
+
     public NodeExecutionResult execute(Node node, NodeExecutionContext context, String idempotencyKey ) {
         return switch (node.getType()) {
             case MANUAL_TRIGGER -> manualTriggerNodeExecutor.execute(node, context);
@@ -50,6 +53,7 @@ public class NodeExecutor {
             case TRANSFORM -> transformNodeExecutor.execute(node, context);
             case MERGE -> mergeNodeExecutor.execute(node, context);
             case TELEGRAM -> telegramNodeExecutor.execute(node, context);
+            case GMAIL -> gmailNodeExecutor.execute(node, context);
         };
 
     }

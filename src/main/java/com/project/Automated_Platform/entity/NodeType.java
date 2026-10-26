@@ -8,5 +8,6 @@ public enum NodeType {
     IF,
     TRANSFORM,
     MERGE,
-    TELEGRAM
+    TELEGRAM,
+    GMAIL
 }

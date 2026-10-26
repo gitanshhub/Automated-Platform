@@ -20,34 +20,31 @@ public class MergeNodeExecutor {
         try {
             JsonNode config = nodeConfigurationParser.parse(node.getConfiguration(), node.getType().toString());
 
-            String mode = requiredConfig(config, "mode").toUpperCase();
+            String mode = requiredConfig(config, "mode").toUpperCase(Locale.ROOT);
 
             List<List<Map<String, Object>>> streams = context.getNodeInputStream(node.getId());
 
-            if (streams.size() != 2) {
-                throw new IllegalArgumentException("MERGE requires exactly 2 input streams; received " + streams.size());
+            if (streams  == null || streams.size() != 2) {
+
+                throw new IllegalArgumentException("MERGE requires exactly 2 input streams; received " + (streams == null ? 0 : streams.size()));
             }
 
             List<Map<String, Object>>
                     input1 = streams.get(0),
                     input2 = streams.get(1),
                     output;
-            switch (mode) {
-                case "APPEND":
-                    output = append(input1, input2);
-                    break;
 
-                case "COMBINE":
-                    output = combine(input1, input2, config);
-                    break;
-
-                case "CHOOSE_BRANCH":
-                    output = chooseBranch(input1, input2, config);
-                    break;
-
-                default:
-                    throw new IllegalArgumentException("Unsupported MERGE mode: " + mode);
+            if(input1 == null || input2 == null) {
+                throw new IllegalArgumentException("MERGE input streams cannot be null");
             }
+
+            output = switch (mode) {
+                case "APPEND" -> append(input1, input2);
+                case "COMBINE" -> combine(input1, input2, config);
+                case "CHOOSE_BRANCH" -> chooseBranch(input1, input2, config);
+                case "NAMESPACE" -> namespace(input1, input2, config);
+                default -> throw new IllegalArgumentException("Unsupported MERGE mode: " + mode);
+            };
 
             context.setNodeOutputItems(node.getId(), output);
 
@@ -245,6 +242,49 @@ public class MergeNodeExecutor {
             default:
                 throw new IllegalArgumentException("CHOOSE_BRANCH input must be INPUT_1 or INPUT_2");
         }
+    }
+
+    private List<Map<String, Object>> namespace(List<Map<String, Object>> input1, List<Map<String, Object>> input2, JsonNode config) {
+        String input1_Name = optionalNameSpace(config, "input1_Name", "input1");
+
+        String input2_Name = optionalNameSpace(config, "input2_Name", "input2");
+
+        if (input1_Name.equals(input2_Name))
+        {
+            throw new IllegalArgumentException("NAMESPACE input names must be different");
+        }
+
+        List<Map<String, Object>> output = new ArrayList<>();
+        int recordCount = Math.max(input1.size(), input2.size());
+
+        for(int i = 0; i < recordCount; i++) {
+            Map<String, Object> merged = new LinkedHashMap<>();
+
+            if(i < input1.size()) {
+                merged.put(input1_Name, new LinkedHashMap<>(input1.get(i)));
+            }
+
+            if(i < input2.size()) {
+                merged.put(input1_Name, new LinkedHashMap<>(input2.get(i)));
+            }
+            output.add(merged);
+        }
+
+        return output;
+
+    }
+
+    private String optionalNameSpace(JsonNode config, String key, String defaultValue) {
+        JsonNode value = config.get(key);
+
+        if(value == null) {
+            return defaultValue;
+        }
+
+        if(!value.isString() || value.asString().isBlank()) {
+            throw new IllegalArgumentException(key + " must be a non-blank string");
+        }
+        return value.asString().trim();
     }
 
     private List<String> readMatchingField(JsonNode config) {
