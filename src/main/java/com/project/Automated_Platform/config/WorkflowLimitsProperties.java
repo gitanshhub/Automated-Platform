@@ -7,5 +7,5 @@ public record WorkflowLimitsProperties(
         int maxNodes,
         int maxConnections,
         int maxOutgoingConnectionsPerNode
-) {
-}
+) {}
+

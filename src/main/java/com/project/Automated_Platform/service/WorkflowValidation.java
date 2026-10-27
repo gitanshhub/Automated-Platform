@@ -3,7 +3,7 @@ package com.project.Automated_Platform.service;
 
 import com.project.Automated_Platform.entity.Node;
 import com.project.Automated_Platform.entity.NodeConnection;
-import com.project.Automated_Platform.entity.NodeType;
+import com.project.Automated_Platform.entity.status.NodeType;
 import com.project.Automated_Platform.entity.Workflow;
 import org.springframework.stereotype.Service;
 

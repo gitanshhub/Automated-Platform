@@ -1,4 +1,4 @@
-package com.project.Automated_Platform.entity;
+package com.project.Automated_Platform.entity.status;
 
 public enum NodeType {
     MANUAL_TRIGGER,

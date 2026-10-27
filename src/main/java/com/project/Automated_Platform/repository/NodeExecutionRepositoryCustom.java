@@ -1,7 +1,6 @@
 package com.project.Automated_Platform.repository;
 
-import com.project.Automated_Platform.entity.NodeExecutionStatus;
-import org.springframework.data.repository.query.Param;
+import com.project.Automated_Platform.entity.status.NodeExecutionStatus;
 
 import java.time.LocalDateTime;
 

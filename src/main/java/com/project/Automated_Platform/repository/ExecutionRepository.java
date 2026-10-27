@@ -1,7 +1,7 @@
 package com.project.Automated_Platform.repository;
 
 import com.project.Automated_Platform.entity.Execution;
-import com.project.Automated_Platform.entity.ExecutionStatus;
+import com.project.Automated_Platform.entity.status.ExecutionStatus;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
@@ -10,13 +10,13 @@ import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.JsonNode;
 
-import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 
 @Repository
 public interface ExecutionRepository extends JpaRepository<Execution, Long> {
 
+    List<Execution> findByWorkflowId(Long workflowId);
 
     List<Execution> findByStatus(ExecutionStatus status);
 

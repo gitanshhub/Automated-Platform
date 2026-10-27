@@ -79,7 +79,7 @@ public class GmailNodeExecutor {
                 helper.setCc(cc.toArray(new String[0]));
             }
             if(!bcc.isEmpty()) {
-                helper.setCc(bcc.toArray(new String[0]));
+                helper.setBcc(bcc.toArray(new String[0]));
             }
 
             helper.setSubject(subject);
@@ -95,7 +95,7 @@ public class GmailNodeExecutor {
 
             context.setNodeOutputItems(node.getId(), List.of(output));
 
-            return new NodeExecutionResult("Gmail sent successfully to "+ recipients.size() + "recipient(s)", 0, null);
+            return new NodeExecutionResult("Gmail sent successfully to "+ recipients.size() + " recipient(s)", 0, null);
 
         } catch(Exception e) {
             throw new RuntimeException("Gmail node execution failed: " + e.getMessage(), e);

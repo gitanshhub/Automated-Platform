@@ -1,7 +1,7 @@
 package com.project.Automated_Platform.service.execution;
 
 import com.project.Automated_Platform.entity.Execution;
-import com.project.Automated_Platform.entity.ExecutionStatus;
+import com.project.Automated_Platform.entity.status.ExecutionStatus;
 import com.project.Automated_Platform.repository.ExecutionRepository;
 import com.project.Automated_Platform.service.ExecutionQueue;
 import org.slf4j.LoggerFactory;

@@ -1,5 +1,6 @@
 package com.project.Automated_Platform.entity;
 
+import com.project.Automated_Platform.entity.status.NodeType;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Data;

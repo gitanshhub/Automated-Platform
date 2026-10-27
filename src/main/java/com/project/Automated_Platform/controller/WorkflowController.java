@@ -6,6 +6,7 @@ import com.project.Automated_Platform.entity.NodeConnection;
 import com.project.Automated_Platform.entity.Workflow;
 import com.project.Automated_Platform.service.WorkflowService;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.*;
 
@@ -17,7 +18,6 @@ public class WorkflowController {
 
     @Autowired
     private WorkflowService workflowService;
-
 
     @PostMapping("/create-workflow")
     public Workflow createWorkflow(@RequestBody Workflow workflow) {
@@ -63,5 +63,27 @@ public class WorkflowController {
         return workflowService.createWebhookExecution(workflowId, payload);
     }
 
+    @PutMapping("/workflow/{workflowId}")
+    public Workflow updateWorkflow(@PathVariable long workflowId,@RequestBody Workflow updatedWorkflow){
+        return workflowService.updateWorkflow(workflowId, updatedWorkflow);
+    }
 
+    @PutMapping("/nodes/{nodeId}")
+    public Node updateNode(@PathVariable long nodeId, @RequestBody Node updatedNode){
+        return workflowService.updateNode(nodeId, updatedNode);
+    }
+
+    @DeleteMapping("/nodes/{nodeId}")
+    public ResponseEntity<?> deleteNode(@PathVariable long nodeId){
+        workflowService.deleteNode(nodeId);
+
+        return ResponseEntity.noContent().build();
+    }
+
+    @DeleteMapping("/workflow/{workflowId}")
+    public ResponseEntity<?> deleteWorkflow(@PathVariable long workflowId){
+        workflowService.deleteWorkflow(workflowId);
+
+        return ResponseEntity.noContent().build();
+    }
 }

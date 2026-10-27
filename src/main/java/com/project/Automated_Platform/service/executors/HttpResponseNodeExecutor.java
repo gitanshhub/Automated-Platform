@@ -68,10 +68,6 @@ public class HttpResponseNodeExecutor {
             throw new IllegalArgumentException("Unsupported HTTP method: " + methodName, e);
         }
 
-//        if(!url.startsWith("http://") && !url.startsWith("https://")) {
-//            throw new IllegalArgumentException("HTTP_REQUEST URL must HTTP or HTTPS");
-//        }
-
         URI uri = buildUri(url, config.get("queryParams"));
         Map<String, String> headers = readStringMap(config.get("headers"));
         Object body = readBody(config.get("body"));
@@ -92,11 +88,6 @@ public class HttpResponseNodeExecutor {
         try {
             response = request.exchange((httpRequest, httpResponse) -> {
                 int statusCode = httpResponse.getStatusCode().value();
-
-
-
-//               Map<String, Object> result = new LinkedHashMap<>();
-//                result.put("Status Code", statusCode);
 
                 String contentType = httpResponse.getHeaders().getContentType() != null
                         ? httpResponse.getHeaders().getContentType().toString() : "";

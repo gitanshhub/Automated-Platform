@@ -1,7 +1,7 @@
 package com.project.Automated_Platform.repository;
 
 
-import com.project.Automated_Platform.entity.NodeExecutionStatus;
+import com.project.Automated_Platform.entity.status.NodeExecutionStatus;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
 import org.springframework.stereotype.Repository;

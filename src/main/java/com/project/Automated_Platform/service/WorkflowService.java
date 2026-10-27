@@ -2,6 +2,7 @@ package com.project.Automated_Platform.service;
 
 import com.project.Automated_Platform.config.WorkflowLimitsProperties;
 import com.project.Automated_Platform.entity.*;
+import com.project.Automated_Platform.entity.status.ExecutionStatus;
 import com.project.Automated_Platform.repository.ExecutionRepository;
 import com.project.Automated_Platform.repository.NodeConnectionRepository;
 import com.project.Automated_Platform.repository.NodeRepository;
@@ -68,6 +69,7 @@ public class WorkflowService {
         return nodeRepository.save(node);
     }
 
+    @Transactional
     public NodeConnection createNodeConnection(Long sourceNodeId, Long targetNodeId, String branch) {
 
         if(sourceNodeId.equals(targetNodeId)) {
@@ -190,7 +192,101 @@ public class WorkflowService {
         return savedExecution;
     }
 
-    private boolean createCycle(Long sourceNodeId, Long targetNodeId) {
+    @Transactional
+    public Workflow updateWorkflow(long workflowId, Workflow updatedWorkflow) {
+        Workflow workflow = workflowRepository.findByIdForUpdate(workflowId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Workflow not found"));
+
+        if(updatedWorkflow.getName() != null) {
+            if(updatedWorkflow.getName().isBlank()) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Workflow name cannot be blank");
+            }
+
+            workflow.setName(updatedWorkflow.getName());
+        }
+
+        if(updatedWorkflow.getDescription() != null) {
+            workflow.setDescription(updatedWorkflow.getDescription());
+        }
+
+        workflow.setUpdatedAt(LocalDateTime.now());
+
+        return workflowRepository.save(workflow);
+    }
+
+    @Transactional
+    public Node updateNode(long nodeId, Node updatedNode) {
+        Node existingNode = nodeRepository.findById(nodeId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "node not found"));
+
+        Long workflowId = existingNode.getWorkflow().getId();
+
+        workflowRepository.findByIdForUpdate(workflowId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "workflow not found"));
+
+        Node node = nodeRepository.findByIdForUpdate(nodeId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "node not found"));
+
+        if (updatedNode.getName() != null) {
+            if (updatedNode.getName().isBlank()) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Node name cannot be blank");
+            }
+            node.setName(updatedNode.getName());
+        }
+
+        if (updatedNode.getDescription() != null) {
+            node.setDescription(updatedNode.getDescription());
+        }
+
+        if (updatedNode.getConfiguration() != null) {
+            node.setConfiguration(updatedNode.getConfiguration());
+        }
+        return nodeRepository.save(node);
+    }
+
+    @Transactional
+    public void deleteNode(long nodeId) {
+        Node existingNode = nodeRepository.findById(nodeId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "node not found"));
+
+        Long workflowId = existingNode.getWorkflow().getId();
+
+        workflowRepository.findByIdForUpdate(workflowId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "workflow not found"));
+
+        Node node = nodeRepository.findByIdForUpdate(nodeId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "node not found"));
+
+
+        List<NodeConnection> outgoing = nodeConnectionRepository.findBySourceNodeId(nodeId);
+        List<NodeConnection> incoming = nodeConnectionRepository.findByTargetNodeId(nodeId);
+
+        nodeConnectionRepository.deleteAll(outgoing);
+        nodeConnectionRepository.deleteAll(incoming);
+
+        nodeRepository.delete(node);
+
+    }
+
+    @Transactional
+    public void deleteWorkflow(long workflowId) {
+        Workflow workflow = workflowRepository.findByIdForUpdate(workflowId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Workflow not found"));
+
+        List<Execution> executions = executionRepository.findByWorkflowId(workflowId);
+        executionRepository.deleteAll(executions);
+
+        List<NodeConnection> connections = nodeConnectionRepository.findBySourceNodeWorkflowId(workflowId);
+        nodeConnectionRepository.deleteAll(connections);
+
+        List<Node> nodes = nodeRepository.findByWorkflowId(workflowId);
+        nodeRepository.deleteAll(nodes);
+
+        workflowRepository.delete(workflow);
+    }
+
+
+        private boolean createCycle(Long sourceNodeId, Long targetNodeId) {
         Set<Long> visited = new HashSet<>();
         Queue<Long> queue = new LinkedList<>();
 

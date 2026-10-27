@@ -1,8 +1,8 @@
 package com.project.Automated_Platform.repository;
 
-import com.project.Automated_Platform.entity.ExecutionStatus;
+import com.project.Automated_Platform.entity.status.ExecutionStatus;
 import com.project.Automated_Platform.entity.NodeExecution;
-import com.project.Automated_Platform.entity.NodeExecutionStatus;
+import com.project.Automated_Platform.entity.status.NodeExecutionStatus;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
