@@ -51,7 +51,6 @@ public class WorkflowService {
         this.limits = limits;
     }
 
-
     public List<Workflow> getAllWorkflows() {
         return workflowRepository.findAll();
     }

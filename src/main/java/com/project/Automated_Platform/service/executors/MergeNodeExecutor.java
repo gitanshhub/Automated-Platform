@@ -265,7 +265,7 @@ public class MergeNodeExecutor {
             }
 
             if(i < input2.size()) {
-                merged.put(input1_Name, new LinkedHashMap<>(input2.get(i)));
+                merged.put(input2_Name, new LinkedHashMap<>(input2.get(i)));
             }
             output.add(merged);
         }
