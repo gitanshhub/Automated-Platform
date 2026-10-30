@@ -1,6 +1,8 @@
 package com.project.Automated_Platform.service;
 
 import com.project.Automated_Platform.config.WorkflowLimitsProperties;
+import com.project.Automated_Platform.dto.WorkflowGraphRequest;
+import com.project.Automated_Platform.dto.WorkflowGraphResponse;
 import com.project.Automated_Platform.entity.*;
 import com.project.Automated_Platform.entity.status.ExecutionStatus;
 import com.project.Automated_Platform.repository.ExecutionRepository;
@@ -12,10 +14,12 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
+import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 import java.time.LocalDateTime;
 import java.util.*;
+import java.util.stream.Collectors;
 
 @Service
 public class WorkflowService {
@@ -45,6 +49,33 @@ public class WorkflowService {
 
     public WorkflowService(WorkflowLimitsProperties limits) {
         this.limits = limits;
+    }
+
+
+    public List<Workflow> getAllWorkflows() {
+        return workflowRepository.findAll();
+    }
+
+    public Workflow getWorkflow(long workflowId) {
+        return workflowRepository.findById(workflowId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Workflow now found"));
+    }
+
+    public List<Node> getWorkflowNodes(long workflowId) {
+        getWorkflow(workflowId);
+
+        return nodeRepository.findByWorkflowId(workflowId);
+    }
+
+    public List<NodeConnection> getWorkflowConnections(long workflowId) {
+        getWorkflow(workflowId);
+
+        return nodeConnectionRepository.findBySourceNodeWorkflowId(workflowId);
+    }
+
+    public Execution getExecution(Long executionId) {
+        return executionRepository.findById(executionId)
+                .orElseThrow(() -> new RuntimeException("Execution not found"));
     }
 
     public Workflow createWorkflow(Workflow workflow) {
@@ -152,11 +183,6 @@ public class WorkflowService {
         }
 
         return savedExecution;
-    }
-
-    public Execution getExecution(Long executionId) {
-        return executionRepository.findById(executionId)
-                .orElseThrow(() -> new RuntimeException("Execution not found"));
     }
 
     public Execution createWebhookExecution(long workflowId, Map<String, Object> payload) {
@@ -285,8 +311,106 @@ public class WorkflowService {
         workflowRepository.delete(workflow);
     }
 
+    @Transactional
+    public WorkflowGraphResponse saveWorkflowGraph(Long workflowId, WorkflowGraphRequest request) {
+        Workflow workflow = workflowRepository.findByIdForUpdate(workflowId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Workflow now found"));
 
-        private boolean createCycle(Long sourceNodeId, Long targetNodeId) {
+        if(request.name() == null || request.name().isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "workflow name cannot be blank");
+        }
+
+        workflow.setName(request.name());
+        workflow.setDescription(request.description());
+        workflow.setUpdatedAt(LocalDateTime.now());
+
+        List<Node> existingNodes = getWorkflowNodes(workflowId);
+
+        Map<Long, Node> existingNodeIds = existingNodes.stream()
+                .collect(Collectors.toMap(
+                        Node::getId, node -> node
+                        )
+                );
+
+        Set<Long> submittedNodeIds = request.nodes().stream()
+                .map(WorkflowGraphRequest.NodeRequest::id)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+
+        for(Node existingNode : existingNodes) {
+            if(!submittedNodeIds.contains(existingNode.getId())) {
+                nodeConnectionRepository.deleteBySourceNodeIdOrTargetNodeId(
+                        existingNode.getId(),
+                        existingNode.getId()
+                );
+
+                nodeRepository.delete(existingNode);
+            }
+        }
+
+        Map<String, Node> nodesByClientId = new HashMap<>();
+
+        for(WorkflowGraphRequest.NodeRequest nodeRequest : request.nodes()) {
+            Node node;
+
+            if(nodeRequest.id() == null) {
+                node = new Node();
+                node.setWorkflow(workflow);
+            } else {
+                node = existingNodeIds.get(nodeRequest.id());
+                if(node == null) {
+                    throw new ResponseStatusException(
+                            HttpStatus.BAD_REQUEST,
+                            "Node does not belong to this workflow: " + nodeRequest.id()
+                    );
+                }
+            }
+
+            node.setName(nodeRequest.name());
+            node.setType(nodeRequest.type());
+
+            Map<String, Object> configuration = nodeRequest.configuration() == null
+                    ? new HashMap<>() : new HashMap<>(nodeRequest.configuration());
+
+            JsonNode configurationJson = objectMapper.valueToTree(configuration);
+            node.setConfiguration(configurationJson);
+
+            Node savedNode = nodeRepository.save(node);
+            nodesByClientId.put(nodeRequest.clientId(), savedNode);
+        }
+
+        List<NodeConnection>
+                oldConnections = nodeConnectionRepository.findBySourceNodeWorkflowId(workflowId),
+                savedConnections = new ArrayList<>();
+
+        nodeConnectionRepository.deleteAll(oldConnections);
+
+        for(WorkflowGraphRequest.ConnectionRequest connectionRequest : request.connections()) {
+            Node source = nodesByClientId.get(connectionRequest.sourceClientId()),
+                 target = nodesByClientId.get(connectionRequest.targetClientId());
+
+            if(source == null || target == null) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Connection refers to an unknown node");
+            }
+
+            if(source.getId().equals(target.getId())) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "A node cannot connect to itself");
+            }
+
+            NodeConnection connection = new NodeConnection();
+            connection.setSourceNode(source);
+            connection.setTargetNode(target);
+            connection.setBranch(connectionRequest.branch());
+
+            savedConnections.add(nodeConnectionRepository.save(connection));
+        }
+
+        Workflow saveWorkflow = workflowRepository.save(workflow);
+
+        return new WorkflowGraphResponse(saveWorkflow, new ArrayList<>(nodesByClientId.values()), savedConnections);
+    }
+
+    private boolean createCycle(Long sourceNodeId, Long targetNodeId) {
         Set<Long> visited = new HashSet<>();
         Queue<Long> queue = new LinkedList<>();
 

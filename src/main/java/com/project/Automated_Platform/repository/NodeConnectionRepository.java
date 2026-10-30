@@ -27,4 +27,9 @@ public interface NodeConnectionRepository extends JpaRepository<NodeConnection, 
     long countBySourceNodeWorkflowId( Long workflowId);
 
     long countBySourceNodeId( Long sourceNodeId);
+
+    void deleteBySourceNodeIdOrTargetNodeId(
+            Long sourceNodeId,
+            Long targetNodeId
+    );
 }

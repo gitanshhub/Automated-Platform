@@ -43,6 +43,6 @@ public class NodeExecutionRepositoryCustomImpl implements NodeExecutionRepositor
                 .getResultList();
 
 
-        return ids.isEmpty() ? null : ids.getFirst().longValue();
+        return ids.isEmpty() ? null : ids.get(0).longValue();
     }
 }
