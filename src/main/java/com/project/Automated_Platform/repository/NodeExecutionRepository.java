@@ -12,6 +12,7 @@ import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.JsonNode;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Optional;
 
 @Repository
@@ -46,4 +47,6 @@ public interface NodeExecutionRepository extends JpaRepository<NodeExecution, Lo
     );
 
     Optional<NodeExecution> findFirstByExecutionIdAndNodeIdAndStartedAt(Long executionId, Long nodeId, LocalDateTime startedAt);
+
+    List<NodeExecution> findByExecutionIdOrderByStartedAtAsc(Long ExecutionId);
 }

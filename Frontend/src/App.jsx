@@ -1,7 +1,11 @@
-import api, { createWorkflow, saveWorkflowGraph, getWorkflow, getWorkflowConnections, getWorkflowNodes, startWorkflowExecution, getExecution } from "./api";
+import api, { createWorkflow, saveWorkflowGraph, getWorkflow, getWorkflowConnections, getWorkflowNodes, startWorkflowExecution, getExecution, getNodeExecution } from "./api";
 
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import CodeMirror from "@uiw/react-codemirror";
+import { json } from "@codemirror/lang-json";
+import { closeBrackets } from "@codemirror/autocomplete";
+import { EditorView } from "@codemirror/view";
 import {
   ReactFlow,
   Background,
@@ -16,6 +20,9 @@ import {
 import {
   Workflow,
   Plus,
+  Bell,
+  CircleHelp,
+  Edit3,
   PanelLeftClose,
   PanelLeftOpen,
   Search,
@@ -39,17 +46,32 @@ import {
 import "@xyflow/react/dist/style.css";
 import "./index.css";
 import { backendNodeTypes, frontendNodeTypes, nodeDefinitions } from "./nodeDefinitions";
+import delayLogo from "./assets/logos/delay.png";
+import gmailLogo from "./assets/logos/google-mail-gmail-icon-logo-symbol-free-png.webp";
+import httpLogo from "./assets/logos/http.png";
+import ifLogo from "./assets/logos/if.png";
+import manualLogo from "./assets/logos/maual trigger.png";
+import mergeLogo from "./assets/logos/merge.png";
+import transformLogo from "./assets/logos/Purple Code Transform Icon.png";
+import telegramLogo from "./assets/logos/Telegram_2019_Logo.svg.webp";
+import webhookLogo from "./assets/logos/webhook.png";
 
 const nodeCatalog = [
-  { type: "manual", label: nodeDefinitions.manual.label, group: "Triggers", icon: Zap, color: "orange" },
-  { type: "http", label: nodeDefinitions.http.label, group: "Actions", icon: Globe, color: "blue" },
-  { type: "delay", label: nodeDefinitions.delay.label, group: "Actions", icon: Clock3, color: "yellow" },
-  { type: "if", label: nodeDefinitions.if.label, group: "Logic", icon: GitBranch, color: "purple" },
-  { type: "transform", label: nodeDefinitions.transform.label, group: "Data", icon: Braces, color: "green" },
-  { type: "gmail", label: nodeDefinitions.gmail.label, group: "Integrations", icon: Mail, color: "red" },
-  { type: "telegram", label: nodeDefinitions.telegram.label, group: "Integrations", icon: MessageCircle, color: "cyan" },
-  { type: "webhook", label: nodeDefinitions.webhook.label, group: "Triggers", icon: Globe, color: "orange" },
-  { type: "merge", label: nodeDefinitions.merge.label, group: "Logic", icon: GitBranch, color: "purple" }
+  { type: "manual", label: nodeDefinitions.manual.label, group: "Triggers", icon: Zap, logo: manualLogo, color: "orange" },
+  { type: "http", label: nodeDefinitions.http.label, group: "Actions", icon: Globe, logo: httpLogo, color: "blue" },
+  { type: "delay", label: nodeDefinitions.delay.label, group: "Actions", icon: Clock3, logo: delayLogo, color: "yellow" },
+  { type: "if", label: nodeDefinitions.if.label, group: "Logic", icon: GitBranch, logo: ifLogo, color: "purple" },
+  { type: "transform", label: nodeDefinitions.transform.label, group: "Data", icon: Braces, logo: transformLogo, color: "green" },
+  { type: "gmail", label: nodeDefinitions.gmail.label, group: "Integrations", icon: Mail, logo: gmailLogo, color: "red" },
+  { type: "telegram", label: nodeDefinitions.telegram.label, group: "Integrations", icon: MessageCircle, logo: telegramLogo, color: "cyan" },
+  { type: "webhook", label: nodeDefinitions.webhook.label, group: "Triggers", icon: Globe, logo: webhookLogo, color: "orange" },
+  { type: "merge", label: nodeDefinitions.merge.label, group: "Logic", icon: GitBranch, logo: mergeLogo, color: "purple" }
+];
+
+const starterTemplates = [
+  { name: "AI → Telegram", description: "Ask a model and send the answer", nodes: ["manual", "http", "transform", "telegram"] },
+  { name: "Webhook → Gmail", description: "Receive data and email a report", nodes: ["webhook", "transform", "gmail"] },
+  { name: "Manual → HTTP", description: "Run an API request on demand", nodes: ["manual", "http"] }
 ];
 
 function WorkflowNode({ data, selected }) {
@@ -64,7 +86,7 @@ function WorkflowNode({ data, selected }) {
           type="target" position={Position.Left} className="node-handle" 
        />}
 
-      <div className={`node-icon ${data.color}`}><Icon size={18} /></div>
+      <div className={`node-icon ${data.color} logo-${data.nodeType}`}>{item?.logo ? <img src={item.logo} alt="" /> : <Icon size={18} />}</div>
       <div className="node-copy">
         <div className="node-title">{data.label}</div>
         <div className="node-subtitle">{data.nodeType}</div>
@@ -77,6 +99,47 @@ function WorkflowNode({ data, selected }) {
       ) : data.nodeType !== "gmail" && data.nodeType !== "telegram" && (
         <Handle type="source" position={Position.Right} className="node-handle" />
       )}
+    </div>
+  );
+}
+
+function InspectorDivider({ onMouseDown }) {
+  return (
+    <div
+      className="inspector-divider"
+      role="separator"
+      aria-label="Resize panel"
+      onPointerDown={onMouseDown}
+    />
+  );
+}
+
+function JsonEditor({ value, onChange, placeholder }) {
+  const text = typeof value === "string"
+    ? value
+    : JSON.stringify(value ?? {}, null, 2);
+
+  return (
+    <div className="json-editor">
+      <div className="json-editor-toolbar">
+        <span>JSON</span>
+      </div>
+      <CodeMirror
+        value={text}
+        placeholder={placeholder}
+        height="220px"
+        theme="dark"
+        extensions={[json(), closeBrackets(), EditorView.lineWrapping]}
+        basicSetup={{
+          lineNumbers: true,
+          foldGutter: true,
+          bracketMatching: true,
+          closeBrackets: true,
+          autocompletion: true,
+          indentOnInput: true
+        }}
+        onChange={onChange}
+      />
     </div>
   );
 }
@@ -121,6 +184,9 @@ function App() {
   const [saving, setSaving] = useState(false);
   const [isDirty, setIsDirty] = useState(false);
   const [execution, setExecution] = useState(null);
+  const [nodeExecutions, setNodeExecutions] = useState([]);
+  const [inputPanelWidth, setInputPanelWidth] = useState(250);
+  const [outputPanelWidth, setOutputPanelWidth] = useState(290);
   const [running, setRunning] = useState(false);
 
 
@@ -138,8 +204,39 @@ function App() {
   const [workflows, setWorkflows] = useState([]);
   const [loadingWorkflows, setLoadingWorkflows] = useState(false)
 
-  const jsonText = (value) =>
-    typeof value === "string" ? value : JSON.stringify(value ?? {}, null, 2);
+  useEffect(() => {
+    if (!notice) return undefined;
+
+    const timeoutId = window.setTimeout(() => setNotice(""), 5000);
+    return () => window.clearTimeout(timeoutId);
+  }, [notice]);
+
+  const startInspectorResize = (panel, event) => {
+    event.preventDefault();
+    event.currentTarget?.setPointerCapture?.(event.pointerId);
+    const startX = event.clientX;
+    const initialWidth = panel === "input" ? inputPanelWidth : outputPanelWidth;
+
+    const move = (moveEvent) => {
+      const delta = moveEvent.clientX - startX;
+      const nextWidth = Math.max(190, Math.min(460, initialWidth + (panel === "input" ? delta : -delta)));
+
+      if (panel === "input") setInputPanelWidth(nextWidth);
+      else setOutputPanelWidth(nextWidth);
+    };
+
+    const stop = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", stop);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    };
+
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", stop);
+  };
 
   const parseJsonField = (value, fieldName) => {
     if (!value || !String(value).trim()) return {};
@@ -196,6 +293,7 @@ function App() {
       configuration: {
         ...node.data.config,
         ...(node.data.nodeType === "http" && {
+          method: String(node.data.config.method ?? "GET").toUpperCase(),
           headers: parseJsonField(node.data.config.headers, "HTTP headers"),
           body: parseJsonField(node.data.config.body, "HTTP body")
         }),
@@ -344,8 +442,43 @@ function App() {
       },
     };
     setNodes((current) => [...current, newNode]);
-    setSelectedNode(newNode);
     setIsDirty(true);
+  };
+
+  const addStarterWorkflow = async (template) => {
+    let activeWorkflowId = workflowId;
+    if (!activeWorkflowId) {
+      try {
+        const workflow = await createWorkflow({ name: template.name, description: template.description, status: "ACTIVE" });
+        activeWorkflowId = workflow.id;
+        setWorkflowId(workflow.id);
+        setWorkflowName(workflow.name);
+      } catch (error) {
+        console.error("Failed to create starter workflow:", error);
+        setNotice(error.response?.data?.message ?? "Failed to create workflow.");
+        return;
+      }
+    }
+
+    const createdNodes = template.nodes.map((type, index) => {
+      const item = nodeCatalog.find((node) => node.type === type);
+      return {
+        id: crypto.randomUUID(),
+        type: "workflowNode",
+        position: { x: 100 + index * 240, y: 180 },
+        data: { nodeType: item.type, label: item.label, color: item.color, config: {} }
+      };
+    });
+    setNodes(createdNodes);
+    setEdges(createdNodes.slice(1).map((node, index) => ({
+      id: `starter-${createdNodes[index].id}-${node.id}`,
+      source: createdNodes[index].id,
+      target: node.id,
+      type: "default"
+    })));
+    setSelectedNode(null);
+    setIsDirty(true);
+    setNotice(`${template.name} starter workflow added.`);
   };
 
   const updateSelectedNode = (changes) => {
@@ -429,6 +562,8 @@ function App() {
         const finishedStatuses = ["SUCCESS", "FAILED"];
 
         if (finishedStatuses.includes(currentExecution.status)) {
+          const nodeResults = await getNodeExecution(executionId);
+          setNodeExecutions(nodeResults);
           setRunning(false);
           setNotice(`Execution finished  with status ${currentExecution.status}`);
           
@@ -448,6 +583,7 @@ function App() {
   const chooseSection = (section) => {
     console.log("clicked section: ", section);
 
+    setSelectedNode(null);
     setActiveSection(section);
 
     if (section === "Workflows") {
@@ -483,11 +619,11 @@ function App() {
       );
 
       setIsDirty(false);
-      setNotice("Workflow loaded from PostgrSQL");
+      setNotice("Workflow loaded from PostgreSQL.");
 
     } catch (error) {
       console.error("Failed to load workflow: ", error);
-      setNotice("Failed to load workflowl");
+      setNotice("Failed to load workflow.");
 
     } finally {
       setLoadingWorkflows(false);
@@ -498,7 +634,7 @@ function App() {
       <header className="topbar">
         <div className="brand">
           <div className="brand-mark"><Workflow size={19} /></div>
-          <span>Workflow Editor</span>
+          <span>Flowforge</span>
         </div>
         <div className="workflow-heading">
           {editingName ? (
@@ -514,13 +650,20 @@ function App() {
               onKeyDown={(event) => event.key === "Enter" && setEditingName(false)}
             />
           ) : (
-            <button className="workflow-name" onClick={() => setEditingName(true)} title="Rename workflow">
-              {workflowName}
-            </button>
+            <>
+              <span className="workflow-context">Workflows <ChevronRight size={13} /></span>
+              <button className="workflow-name" onClick={() => setEditingName(true)} title="Rename workflow">
+                {workflowName}<Edit3 size={13} />
+              </button>
+              <span className="saved-pill"><span /> Saved</span>
+            </>
           )}
         </div>
         <div className="topbar-actions">
-          <button className="run-button" onClick={runWorkflow} disabled={running || saving}><Play size={14} /> {running ? (saving ? "Saving and running..." : "Running...") : "Run workflow"} </button>
+          <button className="topbar-icon-button" title="Help"><CircleHelp size={16} /></button>
+          <button className="topbar-icon-button notification-button" title="Notifications"><Bell size={16} /><span /></button>
+          <div className="topbar-avatar">AS</div>
+          <button className="run-button" onClick={runWorkflow} disabled={running || saving}><Play size={14} /> {running ? (saving ? "Saving and running..." : "Running...") : "Run"} <ChevronDown size={13} /></button>
           <button
             className="new-workflow-button"
             onClick={createNewWorkflow}
@@ -531,55 +674,9 @@ function App() {
       </header>
 
       <div className="workspace">
-        <aside className={`left-sidebar ${sidebarOpen ? "" : "sidebar-collapsed"}`}>
-          <div className="sidebar-header">
-            {sidebarOpen && <span>NODES</span>}
-            <button className="icon-button" onClick={() => setSidebarOpen((open) => !open)} title="Toggle node library">
-              {sidebarOpen ? <PanelLeftClose size={17} /> : <PanelLeftOpen size={17} />}
-            </button>
-          </div>
-          {sidebarOpen ? (
-            <>
-              <div className="node-search">
-                <Search size={15} />
-                <input placeholder="Search nodes..." value={search} onChange={(event) => setSearch(event.target.value)} />
-              </div>
-              <div className="node-list">
-                {groups.map((group) => {
-                  const items = filteredNodes.filter((item) => item.group === group);
-                  if (!items.length) return null;
-                  const collapsed = collapsedGroups[group];
-                  return (
-                    <div className="node-group" key={group}>
-                      <button
-                        className="node-group-heading"
-                        onClick={() => setCollapsedGroups((current) => ({ ...current, [group]: !current[group] }))}
-                      >
-                        {collapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
-                        {group}<span>{items.length}</span>
-                      </button>
-                      {!collapsed && items.map((item) => {
-                        const Icon = item.icon;
-                        return (
-                          <button key={item.type} className="library-node" onClick={() => addNode(item)}>
-                            <span className={`library-node-icon ${item.color}`}><Icon size={15} /></span>
-                            <span>{item.label}</span><Plus size={14} className="library-add" />
-                          </button>
-                        );
-                      })}
-                    </div>
-                  );
-                })}
-                {filteredNodes.length === 0 && <p className="empty-search">No nodes found.</p>}
-              </div>
-            </>
-          ) : (
-            <div className="collapsed-icons">
-              <button title="Open node library" onClick={() => setSidebarOpen(true)}><Plus size={19} /></button>
-            </div>
-          )}
-          <div className="sidebar-navigation">
-            <div className="sidebar-nav-label">WORKSPACE</div>
+        <aside className="left-sidebar workspace-sidebar">
+          <div className="sidebar-header"><span>WORKSPACE</span></div>
+          <div className="sidebar-navigation sidebar-navigation-top">
             <button className={`sidebar-nav-item ${activeSection === "Editor" ? "active" : ""}`} onClick={() => chooseSection("Editor")}><Workflow size={16} /><span>Editor</span></button>
             <button className={`sidebar-nav-item ${activeSection === "Workflows" ? "active" : ""}`} onClick={() => chooseSection("Workflows")}><LayoutDashboard size={16} /><span>Workflows</span></button>
             <button className={`sidebar-nav-item ${activeSection === "Executions" ? "active" : ""}`} onClick={() => chooseSection("Executions")}><History size={16} /><span>Executions</span></button>
@@ -626,8 +723,8 @@ function App() {
           ) : (
             <>
           <div className="canvas-toolbar">
-            <span className="canvas-title">Workflow canvas</span>
-            <span className="node-count-label">{nodes.length} nodes · {edges.length} connections</span>
+            <div className="canvas-heading"><span className="canvas-title">Canvas</span><span>Build your automation visually</span></div>
+            <div className="canvas-toolbar-actions"><span className="node-count-label">{nodes.length} nodes · {edges.length} connections</span><button className="canvas-tool-button" onClick={() => setSidebarOpen(true)}><Plus size={14} /> Add node</button></div>
             {execution && (
               <div className="execution-status">
                 <strong>Execution:</strong>{" "}
@@ -665,9 +762,11 @@ function App() {
             </ReactFlow>
             {nodes.length === 0 && (
               <div className="empty-canvas">
-                <div className="empty-canvas-icon"><Workflow size={27} /></div>
+                <div className="empty-graph-illustration" aria-hidden="true"><span><Zap size={14} /></span><i /><span><Braces size={14} /></span><i /><span><Globe size={14} /></span></div>
+                <span className="empty-eyebrow">NEW WORKFLOW</span>
                 <h3>Start with an empty canvas</h3>
-                <p>Add a node from the left panel to begin building your workflow.</p>
+                <p>Build powerful workflows by connecting triggers, actions, and logic.</p>
+                <div className="starter-template-grid">{starterTemplates.map((template) => <button className="starter-template" key={template.name} onClick={() => addStarterWorkflow(template)}><span><strong>{template.name}</strong><small>{template.description}</small></span><ChevronRight size={14} /></button>)}</div>
                 <button className="new-workflow-button" onClick={() => setSidebarOpen(true)}><Plus size={15} /> Browse nodes</button>
               </div>
             )}
@@ -676,7 +775,42 @@ function App() {
           )}
         </main>
 
+        <aside className={`right-node-library ${sidebarOpen ? "" : "right-node-library-collapsed"}`}>
+          <div className="sidebar-header"><span>{sidebarOpen && "NODE LIBRARY"}</span><button className="icon-button" onClick={() => setSidebarOpen((open) => !open)} title="Toggle node library">{sidebarOpen ? <PanelLeftClose size={17} /> : <PanelLeftOpen size={17} />}</button></div>
+          {sidebarOpen ? <>
+            <div className="node-search"><Search size={15} /><input placeholder="Search nodes..." value={search} onChange={(event) => setSearch(event.target.value)} /></div>
+            <div className="node-list">{groups.map((group) => { const items = filteredNodes.filter((item) => item.group === group); if (!items.length) return null; const collapsed = collapsedGroups[group]; return <div className="node-group" key={group}><button className="node-group-heading" onClick={() => setCollapsedGroups((current) => ({ ...current, [group]: !current[group] }))}>{collapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}{group}<span>{items.length}</span></button>{!collapsed && items.map((item) => { const Icon = item.icon; return <button key={item.type} className="library-node" onClick={() => addNode(item)}><span className={`library-node-icon ${item.color} logo-${item.type}`}>{item.logo ? <img src={item.logo} alt="" /> : <Icon size={15} />}</span><span>{item.label}</span><Plus size={14} className="library-add" /></button>; })}</div>; })}{filteredNodes.length === 0 && <p className="empty-search">No nodes found.</p>}</div>
+            <button className="browse-nodes-button" onClick={() => setSearch("")}><Plus size={14} /> Browse all nodes <ChevronRight size={13} /></button>
+          </> : <div className="collapsed-icons"><button title="Open node library" onClick={() => setSidebarOpen(true)}><Plus size={19} /></button></div>}
+        </aside>
+
         {selectedNode && (
+          <div className="node-inspector">
+            {(() => {
+              const nodeResult = nodeExecutions.find((result) => String(result.nodeId) === String(selectedNode.id));
+              const upstreamIds = edges
+                .filter((edge) => String(edge.target) === String(selectedNode.id))
+                .map((edge) => String(edge.source));
+              const upstreamResults = nodeExecutions.filter((result) => upstreamIds.includes(String(result.nodeId)));
+              const inputStatus = upstreamResults.some((result) => result.status === "FAILED")
+                ? "FAILED"
+                : upstreamResults.some((result) => result.status === "RUNNING")
+                  ? "RUNNING"
+                  : upstreamResults.length > 0 && upstreamResults.every((result) => result.status === "SUCCESS")
+                    ? "SUCCESS"
+                    : null;
+              const inputItems = nodeResult?.outputData?.inputItems ?? [];
+              return (
+                <section className="inspector-side-panel inspector-input-panel" style={{ width: inputPanelWidth }}>
+                  <div className="inspector-side-header"><span>Input</span><span className={`execution-pill ${inputStatus?.toLowerCase() ?? "idle"}`}>{inputStatus ?? "NOT RUN"}</span></div>
+                  <div className="inspector-side-content">
+                    {nodeResult ? <pre className="data-preview">{JSON.stringify(inputItems, null, 2)}</pre> : <p className="config-description">Run the workflow to inspect input data.</p>}
+                  </div>
+                </section>
+              );
+            })()}
+
+            <InspectorDivider onMouseDown={(event) => startInspectorResize("input", event)} />
           <aside className="config-panel">
             <div className="config-header">
               <div><Settings2 size={17} /><span>Node configuration</span></div>
@@ -690,7 +824,7 @@ function App() {
                 return (
                   <>
                     <div className="config-node-heading">
-                      <div className={`node-icon ${selectedNode.data.color}`}><Icon size={20} /></div>
+                      <div className={`node-icon ${selectedNode.data.color} logo-${selectedNode.data.nodeType}`}>{item?.logo ? <img src={item.logo} alt="" /> : <Icon size={20} />}</div>
                       <div><h3>{selectedNode.data.label}</h3><p>{item?.group}</p></div>
                     </div>
                     <label className="field-label">Node name</label>
@@ -705,9 +839,9 @@ function App() {
                       <label className="field-label">URL</label>
                       <input className="field-input" placeholder="https://api.example.com/data" value={config.url ?? ""} onChange={(event) => updateConfig("url", event.target.value)} />
                       <label className="field-label">Headers (JSON)</label>
-                      <textarea className="field-input field-textarea" placeholder={'{\n  "Content-Type": "application/json"\n}'} value={jsonText(config.headers)} onChange={(event) => updateConfig("headers", event.target.value)} />
+                      <JsonEditor placeholder={'{\n  "Content-Type": "application/json"\n}'} value={config.headers} onChange={(value) => updateConfig("headers", value)} />
                       <label className="field-label">Body (JSON)</label>
-                      <textarea className="field-input field-textarea" placeholder="Request body JSON" value={jsonText(config.body)} onChange={(event) => updateConfig("body", event.target.value)} />
+                      <JsonEditor placeholder={'{\n  "message": "Hello"\n}'} value={config.body} onChange={(value) => updateConfig("body", value)} />
                     </>}
 
                     {selectedNode.data.nodeType === "webhook" && <>
@@ -767,7 +901,7 @@ function App() {
                       </>}
                       {(config.operationType === "MAP_FIELDS" || config.operations?.[0]?.type === "MAP_FIELDS") && <>
                         <label className="field-label">Mappings JSON</label>
-                        <textarea className="field-input field-textarea" value={jsonText(config.mappings ?? config.operations?.[0]?.mappings ?? {})} onChange={(event) => updateConfig("mappings", event.target.value)} />
+                        <JsonEditor value={config.mappings ?? config.operations?.[0]?.mappings ?? {}} onChange={(value) => updateConfig("mappings", value)} />
                       </>}
                       {config.operationType !== "SELECT_FIELD" && config.operationType !== "MAP_FIELDS" && config.operations?.[0]?.type !== "SELECT_FIELD" && config.operations?.[0]?.type !== "MAP_FIELDS" && <>
                         <label className="field-label">Source field</label>
@@ -855,9 +989,6 @@ function App() {
                       <textarea className="field-input field-textarea" value={config.message ?? ""} onChange={(event) => updateConfig("message", event.target.value)} />
                     </>}
                     {selectedNode.data.nodeType === "manual" && <p className="config-description">Starts this workflow when you click Run workflow.</p>}
-                    <div className="config-divider" />
-                    <div className="detail-row"><span>Node ID</span><code>{selectedNode.id.slice(0, 12)}</code></div>
-                    <div className="detail-row"><span>Node type</span><code>{selectedNode.data.nodeType}</code></div>
                   </>
                 );
               })()}
@@ -867,6 +998,27 @@ function App() {
               <button className="secondary-button" onClick={() => setSelectedNode(null)}>Close</button>
             </div>
           </aside>
+
+          {(() => {
+            const nodeResult = nodeExecutions.find((result) => String(result.nodeId) === String(selectedNode.id));
+            const outputItems = nodeResult?.outputData?.items ?? [];
+            return (
+              <>
+                <InspectorDivider onMouseDown={(event) => startInspectorResize("output", event)} />
+              <section className="inspector-side-panel inspector-output-panel" style={{ width: outputPanelWidth }}>
+                <div className="inspector-side-header"><span>Output</span><span className={`execution-pill ${nodeResult?.status?.toLowerCase() ?? "idle"}`}>{nodeResult?.status ?? "NOT RUN"}</span></div>
+                <div className="inspector-side-content">
+                  {nodeResult ? <>
+                    <div className="execution-meta">Attempts: {nodeResult.attempts ?? 0}</div>
+                    <pre className="data-preview">{JSON.stringify(outputItems, null, 2)}</pre>
+                    {nodeResult.status === "FAILED" && <p className="execution-error">{nodeResult.output}</p>}
+                  </> : <p className="config-description">Run the workflow to inspect output data.</p>}
+                </div>
+              </section>
+              </>
+            );
+          })()}
+          </div>
         )}
       </div>
       {notice && <div className="status-notice" role="status"><span>{notice}</span><button className="icon-button" onClick={() => setNotice("")} aria-label="Dismiss message"><X size={15} /></button></div>}

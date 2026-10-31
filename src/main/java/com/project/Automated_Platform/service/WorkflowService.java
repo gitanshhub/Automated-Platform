@@ -1,12 +1,14 @@
 package com.project.Automated_Platform.service;
 
 import com.project.Automated_Platform.config.WorkflowLimitsProperties;
+import com.project.Automated_Platform.dto.NodeExecutionResponse;
 import com.project.Automated_Platform.dto.WorkflowGraphRequest;
 import com.project.Automated_Platform.dto.WorkflowGraphResponse;
 import com.project.Automated_Platform.entity.*;
 import com.project.Automated_Platform.entity.status.ExecutionStatus;
 import com.project.Automated_Platform.repository.ExecutionRepository;
 import com.project.Automated_Platform.repository.NodeConnectionRepository;
+import com.project.Automated_Platform.repository.NodeExecutionRepository;
 import com.project.Automated_Platform.repository.NodeRepository;
 import com.project.Automated_Platform.repository.WorkflowRepository;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -41,6 +43,9 @@ public class WorkflowService {
 
     @Autowired
     private ObjectMapper objectMapper;
+
+    @Autowired 
+    private NodeExecutionRepository nodeExecutionRepository;
 
     @Autowired
     private WorkflowValidation workflowValidation;
@@ -408,6 +413,29 @@ public class WorkflowService {
 
         return new WorkflowGraphResponse(saveWorkflow, new ArrayList<>(nodesByClientId.values()), savedConnections);
     }
+
+    public List<NodeExecutionResponse> getNodeExecution(Long executionId) {
+        executionRepository.findById(executionId)
+        .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Execution not found"));
+
+        return nodeExecutionRepository
+        .findByExecutionIdOrderByStartedAtAsc(executionId)
+        .stream()
+        .map(nodeExecution -> new NodeExecutionResponse(
+            nodeExecution.getId(),
+            nodeExecution.getNode().getId(),
+            nodeExecution.getNode().getName(),
+            nodeExecution.getStatus(),
+            nodeExecution.getStartedAt(),
+            nodeExecution.getFinishedAt(),
+            nodeExecution.getAttempts(),
+            nodeExecution.getOutput(),
+            nodeExecution.getOutputData()
+        ))
+        .toList();
+    } 
+
+
 
     private boolean createCycle(Long sourceNodeId, Long targetNodeId) {
         Set<Long> visited = new HashSet<>();

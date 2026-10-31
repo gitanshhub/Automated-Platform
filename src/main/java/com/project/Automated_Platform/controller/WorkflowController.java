@@ -1,5 +1,6 @@
 package com.project.Automated_Platform.controller;
 
+import com.project.Automated_Platform.dto.NodeExecutionResponse;
 import com.project.Automated_Platform.dto.WorkflowGraphRequest;
 import com.project.Automated_Platform.dto.WorkflowGraphResponse;
 import com.project.Automated_Platform.entity.Execution;
@@ -45,6 +46,14 @@ public class WorkflowController {
     public Execution getExecution(@PathVariable Long executionId) {
         return workflowService.getExecution(executionId);
     }
+
+    @GetMapping("/execution/{executionId}/nodes")
+     public List<NodeExecutionResponse> getNodeExecution(@PathVariable Long executionId) {
+        return workflowService.getNodeExecution(executionId);
+     }
+
+
+
 
     @PostMapping("/create-workflow")
     public Workflow createWorkflow(@RequestBody Workflow workflow) {

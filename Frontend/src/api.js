@@ -49,3 +49,8 @@ export const getExecution = async (executionId) => {
     const response = await api.get(`/api/execution/${executionId}`);
     return response.data;
 }
+
+export const getNodeExecution = async (executionId) => {
+    const response = await api.get(`/api/execution/${executionId}/nodes`);
+    return response.data;
+}
